@@ -26,7 +26,7 @@ function loadSave() {
           basicCratesOpened: 0,
           releaseCratesOpened: 0,
         },
-        forever: { stage: 0, lastRandomId: null, currentTask: null },
+        forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
       };
     const parsed = JSON.parse(raw);
     return {
@@ -74,6 +74,7 @@ function loadSave() {
         stage: Number(parsed?.forever?.stage || 0),
         lastRandomId: parsed?.forever?.lastRandomId ?? null,
         currentTask: parsed?.forever?.currentTask ?? null,
+        readyToClaim: !!parsed?.forever?.readyToClaim,
       },
     };
   } catch {
@@ -92,7 +93,7 @@ function loadSave() {
         basicCratesOpened: 0,
         releaseCratesOpened: 0,
       },
-      forever: { stage: 0, lastRandomId: null, currentTask: null },
+      forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
     };
   }
 }
@@ -242,7 +243,8 @@ function normalizeSave(save) {
   if (!save.stats) {
     save.stats = { rogueKills: 0, singleWins: 0, hordeWins: 0, technoWins: 0, totalWins: 0, basicCratesOpened: 0, releaseCratesOpened: 0 };
   }
-  if (!save.forever) save.forever = { stage: 0, lastRandomId: null, currentTask: null };
+  if (!save.forever) save.forever = { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false };
+  if (typeof save.forever.readyToClaim !== "boolean") save.forever.readyToClaim = false;
 
   // Ensure releasite pieces exist as owned when set is purchased.
   // Represent them as "1 total", so if equipped -> count 0, else count 1.
@@ -284,24 +286,20 @@ const RANDOM_TASKS = [
   { id: "r_techno", title: "Defeat Techno Dog", reward: 80, type: "delta", goals: [{ key: "technoWins", target: 1, label: "Techno wins" }] },
   { id: "r_basic_crate", title: "Open 1 Basic Loot Crate", reward: 40, type: "delta", goals: [{ key: "basicCratesOpened", target: 1, label: "Basic crates opened" }] },
   {
-    id: "r_event_techno_release",
-    title: "Event Task: Slay 3 Techno Dogs > Open 1 Release Crate",
-    reward: 100,
+    id: "r_event_horde_release",
+    title: "Event: Win 3× Dog Horde",
+    reward: 0,
+    rewardKind: "releaseCrate",
     type: "delta",
-    goals: [
-      { key: "technoWins", target: 3, label: "Techno wins" },
-      { key: "releaseCratesOpened", target: 1, label: "Release crates opened" },
-    ],
+    goals: [{ key: "hordeWins", target: 3, label: "Dog Horde wins" }],
   },
   {
-    id: "r_event_horde_release",
-    title: "Event Task: Slay 2 Dog Hordes > Open 1 Release Crate",
-    reward: 100,
+    id: "r_event_techno_release",
+    title: "Event: Win 2× Techno Super Dog",
+    reward: 0,
+    rewardKind: "releaseCrate",
     type: "delta",
-    goals: [
-      { key: "hordeWins", target: 2, label: "Dog Horde wins" },
-      { key: "releaseCratesOpened", target: 1, label: "Release crates opened" },
-    ],
+    goals: [{ key: "technoWins", target: 2, label: "Techno wins" }],
   },
 ];
 
@@ -318,7 +316,15 @@ function cloneStats(stats) {
 }
 
 function makeTaskState(def, baseStats = null) {
-  return { id: def.id, title: def.title, reward: def.reward, type: def.type, goals: def.goals, baseStats };
+  return {
+    id: def.id,
+    title: def.title,
+    reward: def.reward,
+    rewardKind: def.rewardKind || "money",
+    type: def.type,
+    goals: def.goals,
+    baseStats,
+  };
 }
 
 function getTaskProgress(task, stats) {
@@ -341,8 +347,38 @@ function pickRandomTask(lastRandomId, stats) {
   return makeTaskState(pick, cloneStats(stats));
 }
 
+/** Fix stuck/old event tasks (e.g. dual goal + open crate) when definitions change. */
+function repairForeverTaskIfStale(save) {
+  const t = save.forever?.currentTask;
+  if (!t || !t.id) return;
+  const def = RANDOM_TASKS.find((d) => d.id === t.id);
+  if (!def) return;
+  const hasReleaseGoal = Array.isArray(t.goals) && t.goals.some((g) => g.key === "releaseCratesOpened");
+  const goalsMismatch =
+    !Array.isArray(t.goals) ||
+    t.goals.length !== def.goals.length ||
+    t.goals.some((g, i) => !def.goals[i] || g.key !== def.goals[i].key || Number(g.target) !== Number(def.goals[i].target));
+  if (!hasReleaseGoal && !goalsMismatch) return;
+
+  const bs = cloneStats(save.stats);
+  if (t.id === "r_event_horde_release") {
+    const oldBase = Number(t.baseStats?.hordeWins ?? 0);
+    const hordeProg = Math.max(0, save.stats.hordeWins - oldBase);
+    const credit = Math.min(hordeProg, 2);
+    bs.hordeWins = save.stats.hordeWins - credit;
+  } else if (t.id === "r_event_techno_release") {
+    const oldBase = Number(t.baseStats?.technoWins ?? 0);
+    const technoProg = Math.max(0, save.stats.technoWins - oldBase);
+    const credit = Math.min(technoProg, 2);
+    bs.technoWins = save.stats.technoWins - credit;
+  }
+  save.forever.currentTask = makeTaskState(def, bs);
+  save.forever.readyToClaim = false;
+}
+
 function ensureForeverTaskState(save) {
   const s = normalizeSave(save);
+  repairForeverTaskIfStale(s);
   if (s.forever.currentTask) return s;
   if (s.forever.stage < FIRST_TASKS.length) s.forever.currentTask = makeTaskState(FIRST_TASKS[s.forever.stage], null);
   else s.forever.currentTask = pickRandomTask(s.forever.lastRandomId, s.stats);
@@ -351,29 +387,55 @@ function ensureForeverTaskState(save) {
 
 function runForeverTaskEngine() {
   const s = ensureForeverTaskState(normalizeSave(loadSave()));
-  let guard = 0;
-  while (guard < 8 && s.forever.currentTask) {
-    guard += 1;
+  if (s.forever.currentTask) {
     const p = getTaskProgress(s.forever.currentTask, s.stats);
-    if (!p.done) break;
-    s.money = (s.money || 0) + Number(s.forever.currentTask.reward || 0);
-    if (s.forever.stage < FIRST_TASKS.length) {
-      s.forever.stage += 1;
-      if (s.forever.stage < FIRST_TASKS.length) s.forever.currentTask = makeTaskState(FIRST_TASKS[s.forever.stage], null);
-      else {
-        const next = pickRandomTask(s.forever.lastRandomId, s.stats);
-        s.forever.lastRandomId = next.id;
-        s.forever.currentTask = next;
-      }
-    } else {
-      const next = pickRandomTask(s.forever.lastRandomId, s.stats);
-      s.forever.lastRandomId = next.id;
-      s.forever.currentTask = next;
-    }
+    s.forever.readyToClaim = !!p.done;
+  } else {
+    s.forever.readyToClaim = false;
   }
   saveGame(s);
   updateShopUi?.();
   updateForeverUi?.();
+}
+
+function claimForeverTask() {
+  const s = ensureForeverTaskState(normalizeSave(loadSave()));
+  if (!s.forever.readyToClaim || !s.forever.currentTask) return;
+  const p = getTaskProgress(s.forever.currentTask, s.stats);
+  if (!p.done) {
+    s.forever.readyToClaim = false;
+    saveGame(s);
+    updateForeverUi?.();
+    return;
+  }
+  const curTask = s.forever.currentTask;
+  const rk = curTask.rewardKind || "money";
+  if (rk === "releaseCrate") {
+    const itemId = rollLimitedReleaseLoot();
+    ensureItemInInventory(s, itemId);
+    s.stats.releaseCratesOpened = (s.stats.releaseCratesOpened || 0) + 1;
+    saveGame(s);
+    revealFreeReleaseCrate?.(itemId);
+  } else {
+    s.money = (s.money || 0) + Number(curTask.reward || 0);
+  }
+  if (s.forever.stage < FIRST_TASKS.length) {
+    s.forever.stage += 1;
+    if (s.forever.stage < FIRST_TASKS.length) s.forever.currentTask = makeTaskState(FIRST_TASKS[s.forever.stage], null);
+    else {
+      const next = pickRandomTask(s.forever.lastRandomId, s.stats);
+      s.forever.lastRandomId = next.id;
+      s.forever.currentTask = next;
+    }
+  } else {
+    const next = pickRandomTask(s.forever.lastRandomId, s.stats);
+    s.forever.lastRandomId = next.id;
+    s.forever.currentTask = next;
+  }
+  s.forever.readyToClaim = false;
+  saveGame(s);
+  updateShopUi?.();
+  runForeverTaskEngine();
 }
 
 // --------- Redeem / Limited Release Crate ----------
@@ -546,6 +608,8 @@ function updateWeaponsSlots() {
 
 let updateShopUi = null;
 let updateForeverUi = null;
+/** Set in initShop: (itemId) => void — shows Limited Release reveal after event task */
+let revealFreeReleaseCrate = null;
 
 // Simple pixel robot renderer (canvas, crisp pixels)
 function drawRobot(canvas) {
@@ -962,9 +1026,13 @@ function initFights() {
   window.addEventListener("keyup", (e) => onKey(e, false));
 
   canvas.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    mouseDown = true;
+    if (e.button === 0) mouseDown = true;
+    if (e.button === 2) {
+      e.preventDefault();
+      tryDash();
+    }
   });
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   window.addEventListener("mouseup", (e) => {
     if (e.button !== 0) return;
     mouseDown = false;
@@ -2248,6 +2316,37 @@ function initShop() {
     }
   };
 
+  revealFreeReleaseCrate = (itemId) => {
+    if (!LIMITED_RELEASE_CRATE_ENABLED || !itemId || !ITEMS[itemId]) return;
+    const it = ITEMS[itemId];
+    const detail =
+      it.type === "weapon"
+        ? `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "")
+        : `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+    if (limitedCrateResult) limitedCrateResult.textContent = `Event reward (free crate): ${it.name} (${detail})`;
+    showLootModal(
+      `Event reward: ${it.name}`,
+      (ctx, W, H) => {
+        ctx.fillStyle = "rgba(241,208,122,.10)";
+        ctx.fillRect(0, 0, W, H);
+        for (let i = 0; i < 10; i++) {
+          const x = (Math.random() * W) | 0;
+          const y = (Math.random() * H) | 0;
+          ctx.fillStyle = "rgba(241,208,122,.55)";
+          ctx.fillRect(x, y, 1, 1);
+        }
+        drawItemTexture(itemId, ctx, W, H);
+        ctx.fillStyle = "rgba(234,240,255,.90)";
+        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText(detail, 12, H - 14);
+      },
+      "limited",
+    );
+    setStatus(`Event task: free Limited Release Crate — ${it.name}`);
+    updateWeaponsSlots();
+    updateShopUi?.();
+  };
+
   if (openLootCrate) {
     openLootCrate.addEventListener("click", async () => {
       game = normalizeSave(loadSave());
@@ -2312,6 +2411,7 @@ function initForeverTasks() {
   const progEl = $("#foreverTaskProgress");
   const rewardEl = $("#foreverTaskReward");
   const stageEl = $("#foreverTaskStage");
+  const claimBtn = $("#foreverClaimBtn");
   if (!titleEl || !descEl || !progEl || !rewardEl || !stageEl) return;
 
   updateForeverUi = () => {
@@ -2324,15 +2424,24 @@ function initForeverTasks() {
       progEl.textContent = "";
       rewardEl.textContent = "$0";
       stageEl.textContent = "Stage: -";
+      if (claimBtn) claimBtn.disabled = true;
       return;
     }
     const p = getTaskProgress(task, s.stats);
     titleEl.textContent = task.title;
-    descEl.textContent = task.type === "abs" ? "Main progression task" : "Random forever task";
-    progEl.textContent = p.text;
-    rewardEl.textContent = `$${task.reward}`;
+    descEl.textContent =
+      task.rewardKind === "releaseCrate"
+        ? "Event: complete the wins, then Claim — your Limited Release Crate opens immediately."
+        : task.type === "abs"
+          ? "Main progression task — Claim when the bar is full."
+          : "Random forever task — Claim when complete.";
+    progEl.textContent = p.done ? `${p.text} (Complete!)` : p.text;
+    rewardEl.textContent = task.rewardKind === "releaseCrate" ? "Reward: 1× Release Crate" : `$${task.reward}`;
     stageEl.textContent = s.forever.stage < FIRST_TASKS.length ? `Stage: ${s.forever.stage + 1} / ${FIRST_TASKS.length}` : "Stage: Forever Random";
+    if (claimBtn) claimBtn.disabled = !s.forever.readyToClaim;
   };
+
+  if (claimBtn) claimBtn.addEventListener("click", () => claimForeverTask());
 
   runForeverTaskEngine();
   updateForeverUi();

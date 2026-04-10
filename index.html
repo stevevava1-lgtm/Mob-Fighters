@@ -25,7 +25,7 @@
         <section class="panel is-active" id="panel-fights" data-panel="fights" aria-label="Fights">
           <div class="panel__header">
             <h2 class="panel__title">Fights</h2>
-            <p class="panel__hint">WASD/Arrow keys to move. LMB to punch.</p>
+            <p class="panel__hint">WASD/Arrow keys to move. LMB to punch. Q or RMB to dash.</p>
           </div>
 
           <div class="fightsLayout">
@@ -235,6 +235,7 @@
               <div class="moneyRow" style="margin-top: 10px">
                 <div class="moneyPill" id="foreverTaskReward">$0</div>
               </div>
+              <button class="buyBtn" id="foreverClaimBtn" type="button" disabled>Claim reward</button>
             </div>
             <div class="shopCard">
               <div class="shopCard__title">Rules</div>
@@ -242,6 +243,8 @@
                 First 8 tasks are fixed and appear in order.
                 <br />
                 After that, tasks are random and cannot repeat twice in a row.
+                <br />
+                When a task is complete, press Claim to collect the reward and unlock the next task.
               </div>
               <div class="shopNote" id="foreverTaskStage"></div>
             </div>
