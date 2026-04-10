@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Boss Fighting (Prototype)</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__title">Boss Fighting</div>
+          <div class="brand__sub">Prototype UI</div>
+        </div>
+        <nav class="tabs" aria-label="Main panels">
+          <button class="tab is-active" data-panel="fights" type="button">Fights</button>
+          <button class="tab" data-panel="weapons" type="button">Weapons</button>
+          <button class="tab" data-panel="shop" type="button">Shop</button>
+          <button class="tab" data-panel="forever" type="button">Forever Tasks</button>
+        </nav>
+      </header>
+
+      <main class="content">
+        <section class="panel is-active" id="panel-fights" data-panel="fights" aria-label="Fights">
+          <div class="panel__header">
+            <h2 class="panel__title">Fights</h2>
+            <p class="panel__hint">WASD/Arrow keys to move. LMB to punch.</p>
+          </div>
+
+          <div class="fightsLayout">
+            <aside class="mobList" aria-label="Mobs">
+              <div class="mobList__title">Mobs</div>
+              <button class="mobBtn is-active" id="mob-rogue-dog" type="button">
+                <span class="mobBtn__name">Rogue Dog</span>
+                <span class="mobBtn__meta">30 HP</span>
+              </button>
+              <button class="mobBtn" id="mob-dog-horde" type="button">
+                <span class="mobBtn__name">Dog Horde!!!</span>
+                <span class="mobBtn__meta">3x Rogue Dog</span>
+              </button>
+              <button class="mobBtn" id="mob-techno-super-dog" type="button">
+                <span class="mobBtn__name">Techno Super Dog</span>
+                <span class="mobBtn__meta">100 HP · Bite + Laser</span>
+              </button>
+              <div class="mobList__note">More mobs: Not released</div>
+            </aside>
+
+            <section class="arenaCard" aria-label="Arena">
+              <div class="arenaHud" aria-label="HUD">
+                <div class="hudRow">
+                  <div class="hudLabel">Player</div>
+                  <div class="bar">
+                    <div class="bar__fill" id="playerHpFill" style="width: 100%"></div>
+                  </div>
+                  <div class="hudValue" id="playerHpText">100 / 100</div>
+                </div>
+                <div class="hudRow">
+                  <div class="hudLabel" id="enemyLabel">Rogue Dog</div>
+                  <div class="bar bar--enemy">
+                    <div class="bar__fill" id="dogHpFill" style="width: 100%"></div>
+                  </div>
+                  <div class="hudValue" id="dogHpText">30 / 30</div>
+                </div>
+                <div class="hudRow hudRow--small">
+                  <div class="hudHint" id="fightHint">Fists equipped. Damage: 5. Cooldown: 1.0s</div>
+                  <div class="hudHint" id="cooldowns">CD: ready</div>
+                </div>
+                <div class="hudRow hudRow--small">
+                  <div class="hudHint">Armor (Releasite)</div>
+                  <div class="armorRow" aria-label="Armor toggles">
+                    <button class="armorBtn" id="equipHelmet" type="button">Helmet</button>
+                    <button class="armorBtn" id="equipChest" type="button">Chest</button>
+                    <button class="armorBtn" id="equipLegs" type="button">Legs</button>
+                    <button class="armorBtn" id="equipBoots" type="button">Boots</button>
+                  </div>
+                </div>
+              </div>
+
+              <canvas id="fightCanvas" class="fightCanvas" width="960" height="540" aria-label="Fight arena canvas"></canvas>
+              <div class="arenaFooter">
+                <div class="arenaFooter__left">Terrain: Playground (slide is solid)</div>
+                <div class="arenaFooter__right">Not released: weapons</div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-weapons" data-panel="weapons" aria-label="Weapons">
+          <div class="panel__header">
+            <h2 class="panel__title">Weapons</h2>
+            <p class="panel__hint">Loadout preview (coming soon).</p>
+          </div>
+
+          <div class="weaponsLayout">
+            <div class="robotCard" role="group" aria-label="Robot model">
+              <div class="robotCard__title">Robot Model</div>
+              <canvas id="robotCanvas" class="robotCanvas" width="224" height="224" aria-label="Pixelated robot model"></canvas>
+              <div class="robotCard__footer">Not Released</div>
+            </div>
+
+            <div class="loadout">
+              <div class="loadout__title">Slots</div>
+              <div class="slotGrid" role="list" aria-label="Equipment slots">
+                <div class="slot" role="listitem">
+                  <div class="slot__name">Helmet</div>
+                  <div class="slot__value" id="slotHelmetValue">You don't own any</div>
+                  <select class="slotSelect" id="slotHelmetSelect" aria-label="Equip helmet"></select>
+                </div>
+                <div class="slot" role="listitem">
+                  <div class="slot__name">Chestplate</div>
+                  <div class="slot__value" id="slotChestValue">You don't own any</div>
+                  <select class="slotSelect" id="slotChestSelect" aria-label="Equip chestplate"></select>
+                </div>
+                <div class="slot" role="listitem">
+                  <div class="slot__name">Leggings</div>
+                  <div class="slot__value" id="slotLegsValue">You don't own any</div>
+                  <select class="slotSelect" id="slotLegsSelect" aria-label="Equip leggings"></select>
+                </div>
+                <div class="slot" role="listitem">
+                  <div class="slot__name">Boots</div>
+                  <div class="slot__value" id="slotBootsValue">You don't own any</div>
+                  <select class="slotSelect" id="slotBootsSelect" aria-label="Equip boots"></select>
+                </div>
+                <div class="slot slot--wide" role="listitem">
+                  <div class="slot__name">Weapon 1</div>
+                  <div class="slot__value" id="slotWeapon1Value">You don't own any</div>
+                  <select class="slotSelect" id="slotWeapon1Select" aria-label="Equip weapon 1"></select>
+                </div>
+                <div class="slot slot--wide" role="listitem">
+                  <div class="slot__name">Weapon 2</div>
+                  <div class="slot__value" id="slotWeapon2Value">You don't own any</div>
+                  <select class="slotSelect" id="slotWeapon2Select" aria-label="Equip weapon 2"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-shop" data-panel="shop" aria-label="Shop">
+          <div class="panel__header">
+            <h2 class="panel__title">Shop</h2>
+            <p class="panel__hint">Buy upgrades. Saved on reload.</p>
+          </div>
+
+          <div class="shopLayout">
+            <div class="shopCard">
+              <div class="shopCard__title">Balance</div>
+              <div class="moneyRow">
+                <div class="moneyPill" id="moneyText">$0</div>
+                <button class="softBtn" id="resetSaveBtn" type="button" title="Reset save">Reset Save</button>
+              </div>
+              <div class="shopNote">Rogue Dog victory gives +10$. Dog Horde victory gives +50$.</div>
+            </div>
+
+            <div class="shopGrid" aria-label="Shop items">
+              <div class="shopItem">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Full set of Releasite armor!!!</div>
+                  <div class="shopItem__price">300$</div>
+                </div>
+                <div class="shopItem__desc">
+                  Yellowish-gold armor set (4 pieces). Equip in fights:
+                  Helmet +5 HP, Chestplate +10 HP, Leggings +7 HP, Boots +4 HP.
+                </div>
+                <button class="buyBtn" id="buyReleasiteSet" type="button">Buy</button>
+                <div class="shopItem__owned" id="ownedReleasite"></div>
+              </div>
+
+              <div class="shopItem">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Basic Loot Crate</div>
+                  <div class="shopItem__price">30$</div>
+                </div>
+                <div class="shopItem__desc">
+                  Open to get a random item (weapons/armor). Shows a short reveal animation.
+                </div>
+                <button class="buyBtn" id="openLootCrate" type="button">Buy & Open</button>
+                <div class="shopItem__owned" id="lootCrateResult"></div>
+              </div>
+            </div>
+
+            <div class="shopSection" id="limitedLootSection" aria-label="Limited prizes">
+              <div class="shopSection__title">Check The Buy Loot Game for these prizes</div>
+              <div class="shopGrid shopGrid--section" aria-label="Limited shop items">
+                <div class="shopItem">
+                  <div class="shopItem__top">
+                    <div class="shopItem__name">Limited Release Crate</div>
+                    <div class="shopItem__price">Redeem Code</div>
+                  </div>
+                  <div class="shopItem__desc">Limited-time crate. You must enter a correct redeem code (case sensitive).</div>
+                  <button class="buyBtn" id="openLimitedReleaseCrate" type="button">Buy Loot Crate</button>
+                  <div class="shopItem__owned" id="limitedCrateResult"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="modal is-hidden" id="lootModal" aria-hidden="true">
+          <div class="modal__backdrop"></div>
+          <div class="modal__card" role="dialog" aria-label="Loot crate opening">
+            <div class="modal__title">Opening Loot Crate...</div>
+            <canvas id="lootCanvas" class="lootCanvas" width="240" height="160"></canvas>
+            <div class="modal__text" id="lootText">...</div>
+            <button class="softBtn" id="closeLootModal" type="button">Close</button>
+          </div>
+        </div>
+
+        <div class="modal is-hidden" id="redeemModal" aria-hidden="true">
+          <div class="modal__backdrop"></div>
+          <div class="modal__card" role="dialog" aria-label="Redeem code">
+            <div class="modal__title">Limited Release Crate</div>
+            <div class="modal__text" id="redeemHelp">Type a correct redeem code. (Case sensitive)</div>
+            <input class="textInput" id="redeemCodeInput" type="text" autocomplete="off" spellcheck="false" />
+            <div class="modal__actions">
+              <button class="buyBtn" id="redeemSubmitBtn" type="button">Redeem</button>
+              <button class="softBtn" id="redeemCancelBtn" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <section class="panel" id="panel-forever" data-panel="forever" aria-label="Forever Tasks">
+          <div class="panel__header">
+            <h2 class="panel__title">Forever Tasks</h2>
+            <p class="panel__hint">Endless tasks with rewards.</p>
+          </div>
+
+          <div class="shopLayout">
+            <div class="shopCard">
+              <div class="shopCard__title">Current Task</div>
+              <div class="emptyState__title" id="foreverTaskTitle">Loading...</div>
+              <div class="emptyState__sub" id="foreverTaskDesc"></div>
+              <div class="shopNote" id="foreverTaskProgress"></div>
+              <div class="moneyRow" style="margin-top: 10px">
+                <div class="moneyPill" id="foreverTaskReward">$0</div>
+              </div>
+            </div>
+            <div class="shopCard">
+              <div class="shopCard__title">Rules</div>
+              <div class="shopItem__desc">
+                First 8 tasks are fixed and appear in order.
+                <br />
+                After that, tasks are random and cannot repeat twice in a row.
+              </div>
+              <div class="shopNote" id="foreverTaskStage"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="bottombar">
+        <div class="statusPill" id="statusPill">Ready</div>
+        <div class="hintText">Tip: Use the tabs to switch panels.</div>
+      </footer>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
