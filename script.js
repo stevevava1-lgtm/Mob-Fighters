@@ -1871,7 +1871,7 @@ function initFights() {
   // Start in menu state; clicking the mob starts the fight.
   const startFight = (mode) => {
     fightStarted = true;
-    fightMode = mode === "horde" ? "horde" : "single";
+    fightMode = mode === "horde" ? "horde" : mode === "techno" ? "techno" : "single";
     if (mode === "horde") {
       dogs = [
         makeDog(world.w * 0.72, world.h * 0.40),
@@ -1888,7 +1888,9 @@ function initFights() {
     }
     reset();
     setUi();
-    setStatus(mode === "horde" ? "Fight started: Dog Horde!!!" : "Fight started: Rogue Dog");
+    setStatus(
+      mode === "horde" ? "Fight started: Dog Horde!!!" : mode === "techno" ? "Fight started: Techno Super Dog" : "Fight started: Rogue Dog",
+    );
   };
 
   if (mobBtnDog) {
