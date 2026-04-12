@@ -41,9 +41,13 @@
               </button>
               <button class="mobBtn" id="mob-techno-super-dog" type="button">
                 <span class="mobBtn__name">Techno Super Dog</span>
-                <span class="mobBtn__meta">100 HP · Bite + Laser</span>
+                <span class="mobBtn__meta">100 HP </span>
               </button>
-              <div class="mobList__note">More mobs: Not released</div>
+              <button class="mobBtn" id="mob-skeleton" type="button">
+                <span class="mobBtn__name">Skeleton</span>
+                <span class="mobBtn__meta">70 HP · Paintball Arena</span>
+              </button>
+              <div class="mobList__note">More mobs: coming later</div>
             </aside>
 
             <section class="arenaCard" aria-label="Arena">
@@ -79,7 +83,7 @@
 
               <canvas id="fightCanvas" class="fightCanvas" width="960" height="540" aria-label="Fight arena canvas"></canvas>
               <div class="arenaFooter">
-                <div class="arenaFooter__left">Terrain: Playground (slide is solid)</div>
+                <div class="arenaFooter__left" id="arenaTerrainLabel">Terrain: —</div>
                 <div class="arenaFooter__right">Not released: weapons</div>
               </div>
             </section>
@@ -154,9 +158,25 @@
             </div>
 
             <div class="shopGrid" aria-label="Shop items">
+              <div class="shopItem shopItem--specialDeal">
+                <div class="shopItem__ribbon" aria-hidden="true">Special deal</div>
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Bow</div>
+                  <div class="shopItem__priceRow" aria-label="Price">
+                    <span class="shopItem__priceWas">4000$</span>
+                    <span class="shopItem__priceNow">2500$</span>
+                  </div>
+                </div>
+                <div class="shopItem__desc">
+                  Auto-aim arrows, 10 damage per shot. Same item as from the Undead crate — on sale while this deal is up.
+                </div>
+                <button class="buyBtn" id="buyBowSpecial" type="button">Buy Bow</button>
+                <div class="shopItem__owned" id="bowSpecialNote"></div>
+              </div>
+
               <div class="shopItem">
                 <div class="shopItem__top">
-                  <div class="shopItem__name">Full set of Releasite armor!!!</div>
+                  <div class="shopItem__name">Full set of Releasite armor!!!(Will Be Removed Soon)</div>
                   <div class="shopItem__price">300$</div>
                 </div>
                 <div class="shopItem__desc">
@@ -177,6 +197,18 @@
                 </div>
                 <button class="buyBtn" id="openLootCrate" type="button">Buy & Open</button>
                 <div class="shopItem__owned" id="lootCrateResult"></div>
+              </div>
+
+              <div class="shopItem">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Undead crate</div>
+                  <div class="shopItem__price">500$</div>
+                </div>
+                <div class="shopItem__desc">
+                Random Undead loot from this crate!!!
+                </div>
+                <button class="buyBtn" id="openUndeadCrate" type="button">Buy & Open</button>
+                <div class="shopItem__owned" id="undeadCrateResult"></div>
               </div>
             </div>
 

@@ -22,6 +22,7 @@ function loadSave() {
           singleWins: 0,
           hordeWins: 0,
           technoWins: 0,
+          skeletonWins: 0,
           totalWins: 0,
           basicCratesOpened: 0,
           releaseCratesOpened: 0,
@@ -66,6 +67,7 @@ function loadSave() {
         singleWins: Number(parsed?.stats?.singleWins || 0),
         hordeWins: Number(parsed?.stats?.hordeWins || 0),
         technoWins: Number(parsed?.stats?.technoWins || 0),
+        skeletonWins: Number(parsed?.stats?.skeletonWins || 0),
         totalWins: Number(parsed?.stats?.totalWins || 0),
         basicCratesOpened: Number(parsed?.stats?.basicCratesOpened || 0),
         releaseCratesOpened: Number(parsed?.stats?.releaseCratesOpened || 0),
@@ -89,6 +91,7 @@ function loadSave() {
         singleWins: 0,
         hordeWins: 0,
         technoWins: 0,
+        skeletonWins: 0,
         totalWins: 0,
         basicCratesOpened: 0,
         releaseCratesOpened: 0,
@@ -205,7 +208,96 @@ const ITEMS = {
     hp: 10,
     tint: "releasiteWraith",
   },
+
+  // Undead crate
+  bone_sword: {
+    id: "bone_sword",
+    name: "Bone Sword",
+    type: "weapon",
+    dmg: 7,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "boneWeapon",
+  },
+  bone_boots: { id: "bone_boots", name: "Bone Boots", type: "boots", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 5, tint: "bone" },
+  bone_helmet: { id: "bone_helmet", name: "Bone Helmet", type: "helmet", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 6, tint: "bone" },
+  bone_leggings: { id: "bone_leggings", name: "Bone Leggings", type: "legs", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 8, tint: "bone" },
+  bone_chestplate: { id: "bone_chestplate", name: "Bone Chestplate", type: "chest", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 11, tint: "bone" },
+  undead_blade: {
+    id: "undead_blade",
+    name: "Undead Blade",
+    type: "weapon",
+    dmg: 13,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "undeadBlade",
+  },
+  bone_bow: {
+    id: "bone_bow",
+    name: "Bow",
+    type: "weapon",
+    dmg: 0,
+    bow: true,
+    bowDmg: 10,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "boneBow",
+  },
+  undead_wraith_chestplate: {
+    id: "undead_wraith_chestplate",
+    name: "Undead Wraith Chestplate",
+    type: "chest",
+    dmg: 0,
+    rangeMult: 1.0,
+    moveMult: 2.0,
+    hp: 10,
+    tint: "undeadWraith",
+  },
+  demonic_bow: {
+    id: "demonic_bow",
+    name: "Demonic Bow",
+    type: "weapon",
+    dmg: 0,
+    bow: true,
+    bowDmg: 30,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "demonicBow",
+  },
 };
+
+function getItemDetailText(it) {
+  if (!it) return "";
+  if (it.bow) return `Bow: ${it.bowDmg} dmg/arrow (auto-aim)`;
+  if (it.type === "weapon") return `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "");
+  return `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+}
+
+/** Weights match design: 1/N rarity → weight ∝ 1/N (see shop description). */
+function rollUndeadLoot() {
+  const table = [
+    { id: "demonic_bow", w: 1 },
+    { id: "undead_wraith_chestplate", w: 2 },
+    { id: "bone_bow", w: 10 },
+    { id: "undead_blade", w: 20 },
+    { id: "bone_chestplate", w: 25 },
+    { id: "bone_leggings", w: 33 },
+    { id: "bone_boots", w: 50 },
+    { id: "bone_helmet", w: 50 },
+    { id: "bone_sword", w: 100 },
+  ];
+  const total = table.reduce((a, row) => a + row.w, 0);
+  let r = Math.random() * total;
+  for (const row of table) {
+    r -= row.w;
+    if (r < 0) return row.id;
+  }
+  return "bone_sword";
+}
 
 function ensureItemInInventory(save, itemId) {
   if (!save.inventory) save.inventory = { counts: {} };
@@ -241,8 +333,18 @@ function normalizeSave(save) {
   if (!save.redeems) save.redeems = { usedCodes: {} };
   if (!save.redeems.usedCodes || typeof save.redeems.usedCodes !== "object") save.redeems.usedCodes = {};
   if (!save.stats) {
-    save.stats = { rogueKills: 0, singleWins: 0, hordeWins: 0, technoWins: 0, totalWins: 0, basicCratesOpened: 0, releaseCratesOpened: 0 };
+    save.stats = {
+      rogueKills: 0,
+      singleWins: 0,
+      hordeWins: 0,
+      technoWins: 0,
+      skeletonWins: 0,
+      totalWins: 0,
+      basicCratesOpened: 0,
+      releaseCratesOpened: 0,
+    };
   }
+  if (save.stats.skeletonWins === undefined || save.stats.skeletonWins === null) save.stats.skeletonWins = 0;
   if (!save.forever) save.forever = { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false };
   if (typeof save.forever.readyToClaim !== "boolean") save.forever.readyToClaim = false;
 
@@ -271,9 +373,9 @@ const FIRST_TASKS = [
 
 const RANDOM_TASKS = [
   {
-    id: "r_all_mobs",
-    title: "Kill one of every mob",
-    reward: 50,
+    id: "r_all_dogs",
+    title: "Kill all types of dogs",
+    reward: 300,
     type: "delta",
     goals: [
       { key: "singleWins", target: 1, label: "Rogue Dog wins" },
@@ -284,6 +386,7 @@ const RANDOM_TASKS = [
   { id: "r_rogue", title: "Defeat Rogue Dog", reward: 20, type: "delta", goals: [{ key: "singleWins", target: 1, label: "Rogue Dog wins" }] },
   { id: "r_horde", title: "Defeat Dog Horde", reward: 50, type: "delta", goals: [{ key: "hordeWins", target: 1, label: "Dog Horde wins" }] },
   { id: "r_techno", title: "Defeat Techno Dog", reward: 80, type: "delta", goals: [{ key: "technoWins", target: 1, label: "Techno wins" }] },
+  { id: "r_skeleton", title: "Defeat a Skeleton", reward: 50, type: "delta", goals: [{ key: "skeletonWins", target: 1, label: "Skeleton wins" }] },
   { id: "r_basic_crate", title: "Open 1 Basic Loot Crate", reward: 40, type: "delta", goals: [{ key: "basicCratesOpened", target: 1, label: "Basic crates opened" }] },
   {
     id: "r_event_horde_release",
@@ -309,6 +412,7 @@ function cloneStats(stats) {
     singleWins: Number(stats?.singleWins || 0),
     hordeWins: Number(stats?.hordeWins || 0),
     technoWins: Number(stats?.technoWins || 0),
+    skeletonWins: Number(stats?.skeletonWins || 0),
     totalWins: Number(stats?.totalWins || 0),
     basicCratesOpened: Number(stats?.basicCratesOpened || 0),
     releaseCratesOpened: Number(stats?.releaseCratesOpened || 0),
@@ -342,7 +446,9 @@ function getTaskProgress(task, stats) {
 }
 
 function pickRandomTask(lastRandomId, stats) {
-  const candidates = RANDOM_TASKS.filter((t) => t.id !== lastRandomId);
+  const sk = Number(stats?.skeletonWins || 0);
+  let candidates = RANDOM_TASKS.filter((t) => t.id !== lastRandomId);
+  candidates = candidates.filter((t) => !(t.id === "r_skeleton" && sk < 1));
   const pick = candidates[(Math.random() * candidates.length) | 0] || RANDOM_TASKS[0];
   return makeTaskState(pick, cloneStats(stats));
 }
@@ -376,9 +482,29 @@ function repairForeverTaskIfStale(save) {
   save.forever.readyToClaim = false;
 }
 
+/** Migrate old "all mobs" task id to all-dogs task. */
+function migrateAllMobsTask(save) {
+  const t = save.forever?.currentTask;
+  if (t?.id === "r_all_mobs") {
+    const def = RANDOM_TASKS.find((d) => d.id === "r_all_dogs");
+    if (def) {
+      save.forever.currentTask = makeTaskState(def, t.baseStats ? cloneStats(t.baseStats) : cloneStats(save.stats));
+      save.forever.readyToClaim = false;
+    }
+  }
+}
+
 function ensureForeverTaskState(save) {
   const s = normalizeSave(save);
   repairForeverTaskIfStale(s);
+  migrateAllMobsTask(s);
+  const cur = s.forever?.currentTask;
+  if (cur?.id === "r_skeleton" && Number(s.stats?.skeletonWins || 0) < 1) {
+    const next = pickRandomTask(s.forever.lastRandomId, s.stats);
+    s.forever.lastRandomId = next.id;
+    s.forever.currentTask = next;
+    s.forever.readyToClaim = false;
+  }
   if (s.forever.currentTask) return s;
   if (s.forever.stage < FIRST_TASKS.length) s.forever.currentTask = makeTaskState(FIRST_TASKS[s.forever.stage], null);
   else s.forever.currentTask = pickRandomTask(s.forever.lastRandomId, s.stats);
@@ -787,6 +913,32 @@ function resolveCircleVsAabbCircleLike(pos, r, box) {
   return { x: pos.x + (dx / d) * push, y: pos.y + (dy / d) * push };
 }
 
+function resolveCircleVsObstacles(pos, r, boxes) {
+  let p = { x: pos.x, y: pos.y };
+  for (const box of boxes) {
+    p = resolveCircleVsAabbCircleLike(p, r, box);
+  }
+  return p;
+}
+
+function circleIntersectsAabb(cx, cy, cr, box) {
+  const px = clamp(cx, box.x, box.x + box.w);
+  const py = clamp(cy, box.y, box.y + box.h);
+  return Math.hypot(cx - px, cy - py) < cr;
+}
+
+function buildPaintballObstacles(W, H) {
+  return [
+    { x: 100, y: 70, w: 100, h: 72 },
+    { x: W * 0.42, y: 55, w: 120, h: 60 },
+    { x: W - 220, y: 85, w: 95, h: 88 },
+    { x: 140, y: H * 0.42, w: 88, h: 100 },
+    { x: W * 0.48, y: H * 0.38, w: 105, h: 95 },
+    { x: W - 200, y: H * 0.4, w: 92, h: 110 },
+    { x: W * 0.34, y: H - 160, w: 130, h: 75 },
+  ];
+}
+
 function initFights() {
   const canvas = $("#fightCanvas");
   if (!canvas) return;
@@ -797,7 +949,9 @@ function initFights() {
   const mobBtnDog = $("#mob-rogue-dog");
   const mobBtnHorde = $("#mob-dog-horde");
   const mobBtnTechno = $("#mob-techno-super-dog");
+  const mobBtnSkeleton = $("#mob-skeleton");
   const moneyText = $("#moneyText");
+  const arenaTerrainLabel = $("#arenaTerrainLabel");
 
   const ui = {
     playerFill: $("#playerHpFill"),
@@ -807,6 +961,7 @@ function initFights() {
     cooldowns: $("#cooldowns"),
   };
   const enemyLabel = $("#enemyLabel");
+  const fightHintEl = $("#fightHint");
   const armorUi = {
     helmet: $("#equipHelmet"),
     chest: $("#equipChest"),
@@ -830,10 +985,12 @@ function initFights() {
     speed: 170, // slower than dog
     cdMs: 1000,
     cdLeft: 0,
-    dmg: 5, // fists
+    dmg: 5, // fists + weapon (melee)
     rangeMult: 1.0,
     dashCdMs: 900,
     dashCdLeft: 0,
+    usingBow: false,
+    bowDmg: 0,
   };
 
   const makeDog = (x, y) => ({
@@ -850,6 +1007,24 @@ function initFights() {
     justHitRetreatMs: 550,
     retreatLeft: 0,
     rewarded: false,
+  });
+  const makeSkeleton = (x, y) => ({
+    x,
+    y,
+    r: 14,
+    hpMax: 70,
+    hp: 70,
+    speed: 175,
+    cdMs: 1000,
+    cdLeft: 0,
+    dmg: 0,
+    mode: "charge",
+    justHitRetreatMs: 400,
+    retreatLeft: 0,
+    rewarded: false,
+    kind: "skeleton",
+    shootCdMs: 1000,
+    shootCdLeft: 600,
   });
   const makeTechnoDog = (x, y) => ({
     x,
@@ -885,11 +1060,20 @@ function initFights() {
   let lastMove = { x: 1, y: 0 };
   let animT = 0;
   let rewardGranted = false;
-  let fightMode = "single"; // single | horde
+  let fightMode = "single"; // single | horde | techno | skeleton
+  let terrainType = "playground"; // playground | paintball
+  let paintballObstacles = [];
+  let arrows = [];
   let playerMoving = false;
   let slideDestroyed = false;
   let slideLaserMs = 0;
   let slideExplosionMs = 0;
+
+  const getSolidObstacles = () => {
+    if (terrainType === "paintball") return paintballObstacles;
+    if (!slideDestroyed) return [world.slide];
+    return [];
+  };
 
   const updateMoneyUi = () => {
     if (!moneyText) return;
@@ -927,15 +1111,32 @@ function initFights() {
     const hpBonus = (helmet?.hp ?? 0) + (chest?.hp ?? 0) + (legs?.hp ?? 0) + (boots?.hp ?? 0);
     const moveMult = Math.max(1.0, (chest?.moveMult ?? 1.0));
 
-    // fists base + weapon bonus
-    player.dmg = 5 + (weapon1?.dmg ?? 0);
-    player.rangeMult = weapon1?.rangeMult ?? 1.0;
+    if (weapon1?.bow) {
+      player.usingBow = true;
+      player.bowDmg = Number(weapon1.bowDmg ?? 0);
+      player.dmg = 5;
+      player.rangeMult = weapon1?.rangeMult ?? 1.0;
+    } else {
+      player.usingBow = false;
+      player.bowDmg = 0;
+      player.dmg = 5 + (weapon1?.dmg ?? 0);
+      player.rangeMult = weapon1?.rangeMult ?? 1.0;
+    }
     player.speed = 170 * moveMult;
 
     const newMax = 100 + hpBonus;
     const delta = newMax - player.hpMax;
     player.hpMax = newMax;
     player.hp = clamp(player.hp + delta, 0, player.hpMax);
+
+    if (fightHintEl) {
+      const w = weapon1;
+      if (w?.bow) {
+        fightHintEl.textContent = `${w.name}: ${player.bowDmg} dmg/arrow (auto-aim). Cooldown: 1.0s`;
+      } else {
+        fightHintEl.textContent = `Equipped weapon damage: ${player.dmg}. Cooldown: 1.0s`;
+      }
+    }
   };
 
   const reset = () => {
@@ -956,13 +1157,19 @@ function initFights() {
         d.nextActionInMs = 1000;
         d.laserActiveMs = 0;
       }
+      if (d.kind === "skeleton") {
+        d.shootCdLeft = 600;
+      }
     }
 
     gameOver = false;
     rewardGranted = false;
-    slideDestroyed = false;
-    slideLaserMs = 0;
-    slideExplosionMs = 0;
+    arrows = [];
+    if (terrainType === "playground") {
+      slideDestroyed = false;
+      slideLaserMs = 0;
+      slideExplosionMs = 0;
+    }
     applyLoadout();
   };
 
@@ -991,6 +1198,12 @@ function initFights() {
       if (!btn) continue;
       btn.disabled = !owned;
       btn.classList.toggle("is-on", !!eq[k]);
+    }
+
+    if (arenaTerrainLabel) {
+      if (!fightStarted) arenaTerrainLabel.textContent = "Terrain: —";
+      else if (terrainType === "paintball") arenaTerrainLabel.textContent = "Terrain: Paintball Arena (7 bunkers)";
+      else arenaTerrainLabel.textContent = slideDestroyed ? "Terrain: Playground (slide destroyed)" : "Terrain: Playground (slide is solid)";
     }
   };
 
@@ -1053,11 +1266,37 @@ function initFights() {
       }
     }
     if (!best) return;
+
+    if (player.usingBow) {
+      player.cdLeft = player.cdMs;
+      const adx = best.x - player.x;
+      const ady = best.y - player.y;
+      const an = Math.hypot(adx, ady) || 1;
+      const sp = 480;
+      const ux = adx / an;
+      const uy = ady / an;
+      arrows.push({
+        x: player.x + ux * 22,
+        y: player.y + uy * 22,
+        vx: ux * sp,
+        vy: uy * sp,
+        dmg: player.bowDmg,
+        r: 5,
+        ally: true,
+      });
+      const mobName =
+        best.kind === "skeleton" ? "Skeleton" : best.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
+      setStatus(`Arrow → ${mobName} (${player.bowDmg} dmg)`);
+      return;
+    }
+
     const range = (player.r + best.r + 16) * (player.rangeMult ?? 1.0);
     if (bestD > range) return; // melee range
     player.cdLeft = player.cdMs;
     best.hp = clamp(best.hp - player.dmg, 0, best.hpMax);
-    setStatus(`Hit Rogue Dog for ${player.dmg}`);
+    const mobName =
+      best.kind === "skeleton" ? "Skeleton" : best.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
+    setStatus(`Hit ${mobName} for ${player.dmg}`);
   };
 
   const tryDash = () => {
@@ -1073,14 +1312,10 @@ function initFights() {
     let ny = player.y + uy * dashDist;
     nx = clamp(nx, player.r, world.w - player.r);
     ny = clamp(ny, player.r, world.h - player.r);
-    if (!slideDestroyed) {
-      const pushed = resolveCircleVsAabbCircleLike({ x: nx, y: ny }, player.r, world.slide);
-      player.x = pushed.x;
-      player.y = pushed.y;
-    } else {
-      player.x = nx;
-      player.y = ny;
-    }
+    const solid = getSolidObstacles();
+    const pushed = resolveCircleVsObstacles({ x: nx, y: ny }, player.r, solid);
+    player.x = pushed.x;
+    player.y = pushed.y;
     player.dashCdLeft = player.dashCdMs;
     setStatus("Dash!");
   };
@@ -1090,6 +1325,7 @@ function initFights() {
     if (gameOver) return;
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
+      if (d0.kind === "skeleton" || d0.kind === "techno") continue;
       if (d0.cdLeft > 0) continue;
       const d = len(d0.x - player.x, d0.y - player.y);
       if (d > player.r + d0.r + 10) continue;
@@ -1186,7 +1422,9 @@ function initFights() {
       const x2 = d0.x + ux * d0.laserLen;
       const y2 = d0.y + uy * d0.laserLen;
       const dist = distancePointToSegment(player.x, player.y, x1, y1, x2, y2);
-      const blockedBySlide = !slideDestroyed && segmentIntersectsAabb(x1, y1, player.x, player.y, world.slide);
+      const onPlayground = terrainType === "playground";
+      const blockedBySlide =
+        onPlayground && !slideDestroyed && segmentIntersectsAabb(x1, y1, player.x, player.y, world.slide);
       if (!blockedBySlide && dist <= player.r + d0.laserHalfW) {
         player.hp = clamp(player.hp - d0.laserDps * (dtMs / 1000), 0, player.hpMax);
         if (player.hp <= 0) {
@@ -1195,7 +1433,7 @@ function initFights() {
         }
       }
 
-      if (!slideDestroyed) {
+      if (onPlayground && !slideDestroyed) {
         const hitsSlide = segmentIntersectsAabb(x1, y1, x2, y2, world.slide);
         if (hitsSlide) {
           slideLaserMs += dtMs;
@@ -1278,15 +1516,10 @@ function initFights() {
     let ny = player.y + vy * player.speed * dt;
     nx = clamp(nx, player.r, world.w - player.r);
     ny = clamp(ny, player.r, world.h - player.r);
-    // slide collision
-    if (!slideDestroyed) {
-      const pushed = resolveCircleVsAabbCircleLike({ x: nx, y: ny }, player.r, world.slide);
-      player.x = pushed.x;
-      player.y = pushed.y;
-    } else {
-      player.x = nx;
-      player.y = ny;
-    }
+    const solidObs = getSolidObstacles();
+    const pushedPlayer = resolveCircleVsObstacles({ x: nx, y: ny }, player.r, solidObs);
+    player.x = pushedPlayer.x;
+    player.y = pushedPlayer.y;
 
     // player attack (LMB)
     if (mouseDown) tryPlayerAttack();
@@ -1295,6 +1528,27 @@ function initFights() {
     if (fightStarted && !gameOver && player.hp > 0) {
       for (const d0 of dogs) {
         if (d0.hp <= 0) continue;
+        if (d0.kind === "skeleton") {
+          d0.speed = player.speed * 0.7;
+          d0.shootCdLeft = Math.max(0, d0.shootCdLeft - dt * 1000);
+          if (d0.shootCdLeft <= 0) {
+            d0.shootCdLeft = d0.shootCdMs;
+            const adx = player.x - d0.x;
+            const ady = player.y - d0.y;
+            const an = Math.hypot(adx, ady) || 1;
+            const sp = 440;
+            const ux = adx / an;
+            const uy = ady / an;
+            arrows.push({
+              x: d0.x + ux * 26,
+              y: d0.y + uy * 26,
+              vx: ux * sp,
+              vy: uy * sp,
+              dmg: 20,
+              r: 5,
+            });
+          }
+        }
         if (d0.kind === "techno") technoAttackStep(d0, dt * 1000);
         if (gameOver) break;
         let dx = player.x - d0.x;
@@ -1318,7 +1572,12 @@ function initFights() {
           d = Math.hypot(dx, dy) || 1;
         }
 
-        if (d0.mode === "retreat") {
+        if (d0.kind === "skeleton") {
+          // Kite: move away from the player (arrows still aim at player separately).
+          dx = d0.x - player.x;
+          dy = d0.y - player.y;
+          d = Math.hypot(dx, dy) || 1;
+        } else if (d0.mode === "retreat") {
           d0.retreatLeft = Math.max(0, d0.retreatLeft - dt * 1000);
           dx = -dx;
           dy = -dy;
@@ -1340,14 +1599,58 @@ function initFights() {
 
         let dax = clamp(d0.x + ddx, d0.r, world.w - d0.r);
         let day = clamp(d0.y + ddy, d0.r, world.h - d0.r);
-        if (!slideDestroyed) {
-          const pushedDog = resolveCircleVsAabbCircleLike({ x: dax, y: day }, d0.r, world.slide);
-          d0.x = pushedDog.x;
-          d0.y = pushedDog.y;
-        } else {
-          d0.x = dax;
-          d0.y = day;
+        const dogSolid = getSolidObstacles();
+        const pushedDog = resolveCircleVsObstacles({ x: dax, y: day }, d0.r, dogSolid);
+        d0.x = pushedDog.x;
+        d0.y = pushedDog.y;
+      }
+
+      if (arrows.length && !gameOver) {
+        const nextArrows = [];
+        const obs = getSolidObstacles();
+        for (const a of arrows) {
+          let x = a.x + a.vx * dt;
+          let y = a.y + a.vy * dt;
+          let dead = false;
+          for (const box of obs) {
+            if (circleIntersectsAabb(x, y, a.r, box)) {
+              dead = true;
+              break;
+            }
+          }
+          if (dead) continue;
+          if (x < -40 || x > world.w + 40 || y < -40 || y > world.h + 40) continue;
+
+          if (a.ally) {
+            let hitDog = false;
+            for (const d0 of dogs) {
+              if (d0.hp <= 0) continue;
+              if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + a.r) {
+                d0.hp = clamp(d0.hp - a.dmg, 0, d0.hpMax);
+                const mobName =
+                  d0.kind === "skeleton" ? "Skeleton" : d0.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
+                setStatus(`Arrow hit ${mobName} for ${a.dmg}`);
+                hitDog = true;
+                break;
+              }
+            }
+            if (hitDog) continue;
+            nextArrows.push({ ...a, x, y });
+            continue;
+          }
+
+          if (Math.hypot(x - player.x, y - player.y) <= player.r + a.r) {
+            player.hp = clamp(player.hp - a.dmg, 0, player.hpMax);
+            setStatus(`Skeleton arrow hit you for ${a.dmg}`);
+            if (player.hp <= 0) {
+              gameOver = true;
+              setStatus("You were defeated");
+            }
+            continue;
+          }
+          nextArrows.push({ ...a, x, y });
         }
+        arrows = nextArrows;
       }
 
       const hasTechno = dogs.some((d0) => d0.kind === "techno" && d0.hp > 0);
@@ -1360,7 +1663,7 @@ function initFights() {
         if (d0.hp <= 0 && !d0.rewarded) {
           d0.rewarded = true;
           const s = normalizeSave(loadSave());
-          if (d0.kind !== "techno") s.stats.rogueKills += 1;
+          if (d0.kind !== "techno" && d0.kind !== "skeleton") s.stats.rogueKills += 1;
           saveGame(s);
         }
       }
@@ -1371,11 +1674,13 @@ function initFights() {
         s.stats.totalWins += 1;
         if (fightMode === "horde") s.stats.hordeWins += 1;
         else if (fightMode === "techno") s.stats.technoWins += 1;
+        else if (fightMode === "skeleton") s.stats.skeletonWins += 1;
         else s.stats.singleWins += 1;
         saveGame(s);
         if (!rewardGranted) {
           rewardGranted = true;
           if (fightMode === "horde") addMoney(50);
+          else if (fightMode === "skeleton") addMoney(70);
           else addMoney(10);
         }
         runForeverTaskEngine();
@@ -1400,65 +1705,100 @@ function initFights() {
       ctx.fillText("choose a enemy!", W / 2 - 108, H / 2 - 6);
       ctx.fillStyle = "rgba(234,240,255,.70)";
       ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText("Click Rogue Dog in Mobs", W / 2 - 110, H / 2 + 18);
+      ctx.fillText("Click a mob in the list to start", W / 2 - 132, H / 2 + 18);
       // show player preview only
       drawPlayer(ctx, player, animT, lastMove);
       return;
     }
 
-    // playground ground
-    ctx.fillStyle = "#07141C";
-    ctx.fillRect(0, 0, W, H);
-
-    // grass tiles (pixel-ish)
-    for (let y = 0; y < H; y += 12) {
-      for (let x = 0; x < W; x += 12) {
-        const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-        const t = (n % 100) / 100;
-        const g = 18 + Math.floor(t * 18);
-        ctx.fillStyle = `rgb(7,${g + 30},${g + 18})`;
-        ctx.fillRect(x, y, 12, 12);
+    if (terrainType === "paintball") {
+      ctx.fillStyle = "#14091c";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(255,255,255,.12)";
+      ctx.lineWidth = 1;
+      const grid = 36;
+      for (let x = 0; x <= W; x += grid) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
       }
-    }
-
-    // slide (solid until destroyed)
-    const s = world.slide;
-    if (!slideDestroyed) {
-      ctx.fillStyle = "rgba(124,92,255,.18)";
-      ctx.fillRect(s.x - 8, s.y - 8, s.w + 16, s.h + 16);
-      ctx.fillStyle = "#1A2350";
-      ctx.fillRect(s.x, s.y, s.w, s.h);
-      ctx.strokeStyle = "rgba(37,228,255,.45)";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(s.x + 1.5, s.y + 1.5, s.w - 3, s.h - 3);
-
-      ctx.fillStyle = "rgba(37,228,255,.15)";
-      for (let i = 0; i < 6; i++) {
-        ctx.fillRect(s.x + 18 + i * 38, s.y + 16, 10, s.h - 32);
+      for (let y = 0; y <= H; y += grid) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
       }
-      ctx.fillStyle = "rgba(234,240,255,.55)";
-      ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText("SLIDE (solid)", s.x + 12, s.y + 18);
+      for (const b of paintballObstacles) {
+        ctx.fillStyle = "#1b4332";
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.strokeStyle = "rgba(255,255,255,.4)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+        ctx.fillStyle = "rgba(255,64,160,.28)";
+        ctx.beginPath();
+        ctx.arc(b.x + b.w * 0.33, b.y + b.h * 0.38, Math.min(b.w, b.h) * 0.14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(64,200,255,.22)";
+        ctx.beginPath();
+        ctx.arc(b.x + b.w * 0.67, b.y + b.h * 0.58, Math.min(b.w, b.h) * 0.11, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else {
-      // rubble marker
-      ctx.fillStyle = "rgba(80,80,90,.35)";
-      ctx.fillRect(s.x + 24, s.y + s.h / 2 + 22, s.w - 48, 18);
-    }
+      // playground ground
+      ctx.fillStyle = "#07141C";
+      ctx.fillRect(0, 0, W, H);
 
-    if (slideExplosionMs > 0) {
-      const cx = s.x + s.w / 2;
-      const cy = s.y + s.h / 2;
-      const t = slideExplosionMs / 850;
-      const r = (1 - t) * 170;
-      ctx.fillStyle = `rgba(255,120,70,${(0.28 * t).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = `rgba(255,230,150,${(0.9 * t).toFixed(3)})`;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(cx, cy, Math.max(24, r - 8), 0, Math.PI * 2);
-      ctx.stroke();
+      // grass tiles (pixel-ish)
+      for (let y = 0; y < H; y += 12) {
+        for (let x = 0; x < W; x += 12) {
+          const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+          const t = (n % 100) / 100;
+          const g = 18 + Math.floor(t * 18);
+          ctx.fillStyle = `rgb(7,${g + 30},${g + 18})`;
+          ctx.fillRect(x, y, 12, 12);
+        }
+      }
+
+      // slide (solid until destroyed)
+      const s = world.slide;
+      if (!slideDestroyed) {
+        ctx.fillStyle = "rgba(124,92,255,.18)";
+        ctx.fillRect(s.x - 8, s.y - 8, s.w + 16, s.h + 16);
+        ctx.fillStyle = "#1A2350";
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.strokeStyle = "rgba(37,228,255,.45)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(s.x + 1.5, s.y + 1.5, s.w - 3, s.h - 3);
+
+        ctx.fillStyle = "rgba(37,228,255,.15)";
+        for (let i = 0; i < 6; i++) {
+          ctx.fillRect(s.x + 18 + i * 38, s.y + 16, 10, s.h - 32);
+        }
+        ctx.fillStyle = "rgba(234,240,255,.55)";
+        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText("SLIDE (solid)", s.x + 12, s.y + 18);
+      } else {
+        // rubble marker
+        ctx.fillStyle = "rgba(80,80,90,.35)";
+        ctx.fillRect(s.x + 24, s.y + s.h / 2 + 22, s.w - 48, 18);
+      }
+
+      if (slideExplosionMs > 0) {
+        const cx = s.x + s.w / 2;
+        const cy = s.y + s.h / 2;
+        const t = slideExplosionMs / 850;
+        const r = (1 - t) * 170;
+        ctx.fillStyle = `rgba(255,120,70,${(0.28 * t).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255,230,150,${(0.9 * t).toFixed(3)})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(24, r - 8), 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     // entities
@@ -1466,7 +1806,27 @@ function initFights() {
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
       if (d0.kind === "techno") drawTechnoDog(ctx, d0, animT);
+      else if (d0.kind === "skeleton") drawSkeleton(ctx, d0, animT);
       else drawRogueDog(ctx, d0, animT);
+    }
+
+    for (const a of arrows) {
+      const ang = Math.atan2(a.vy, a.vx);
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(ang);
+      if (a.ally) {
+        ctx.fillStyle = "#1a4d3a";
+        ctx.fillRect(-10, -2, 14, 4);
+        ctx.fillStyle = "#7dffb8";
+        ctx.fillRect(4, -1.5, 7, 3);
+      } else {
+        ctx.fillStyle = "#5c3d1e";
+        ctx.fillRect(-10, -2, 14, 4);
+        ctx.fillStyle = "#c0c8d4";
+        ctx.fillRect(4, -1.5, 7, 3);
+      }
+      ctx.restore();
     }
 
     if (gameOver) {
@@ -1584,7 +1944,7 @@ function initFights() {
       const uy = d0.laserDir.y;
       let x2 = d0.x + ux * d0.laserLen;
       let y2 = d0.y + uy * d0.laserLen;
-      if (!slideDestroyed) {
+      if (terrainType === "playground" && !slideDestroyed) {
         const hit = segmentClipAabbT(d0.x, d0.y - 2, x2, y2, world.slide);
         if (hit && hit.tEnter >= 0) {
           x2 = d0.x + (x2 - d0.x) * hit.tEnter;
@@ -1609,6 +1969,37 @@ function initFights() {
     g.lineWidth = 2;
     g.beginPath();
     g.arc(d0.x, d0.y, d0.r + 9, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  function drawSkeleton(g, d0, t) {
+    const scale = 4;
+    const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
+    const frame = moving ? (((t * 10) | 0) % 2) : 0;
+    const sprite = getSkeletonSprite(frame);
+    const sw = sprite.w;
+    const sh = sprite.h;
+    const dx = Math.round(d0.x - (sw * scale) / 2);
+    const dy = Math.round(d0.y - (sh * scale) / 2);
+
+    g.fillStyle = "rgba(0,0,0,.22)";
+    g.beginPath();
+    g.ellipse(d0.x, d0.y + 16, 16, 7, 0, 0, Math.PI * 2);
+    g.fill();
+
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const c = sprite.p[y * sw + x];
+        if (!c) continue;
+        g.fillStyle = c;
+        g.fillRect(dx + x * scale, dy + y * scale, scale, scale);
+      }
+    }
+
+    g.strokeStyle = "rgba(180,200,255,.4)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(d0.x, d0.y, d0.r + 8, 0, Math.PI * 2);
     g.stroke();
   }
 
@@ -1735,6 +2126,87 @@ function initFights() {
     // nose highlight
     set(2, 7, nose);
     set(2, 8, nose);
+
+    return { w, h, p };
+  }
+
+  function getSkeletonSprite(frame) {
+    const T = null;
+    const outline = "#0a0a0c";
+    const bone = "#eef1f6";
+    const boneHi = "#ffffff";
+    const boneLo = "#b8c0ce";
+    const rib = "#7a8494";
+    const bow = "#7a4a28";
+    const bowHi = "#a06a3a";
+    const bowLo = "#4a2c14";
+
+    const w = 16;
+    const h = 22;
+    const p = new Array(w * h).fill(T);
+    const set = (x, y, c) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return;
+      p[y * w + x] = c;
+    };
+    const fill = (x0, y0, x1, y1, c) => {
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+
+    // bow (left side)
+    fill(1, 5, 3, 16, outline);
+    fill(2, 6, 2, 15, bowLo);
+    fill(3, 7, 3, 14, bow);
+    set(2, 5, bowHi);
+    set(2, 16, bowHi);
+    set(4, 10, bowHi);
+    set(4, 11, bowLo);
+
+    // head (block)
+    fill(6, 1, 11, 6, outline);
+    fill(7, 2, 10, 5, bone);
+    set(8, 3, boneHi);
+    set(9, 3, boneHi);
+    set(7, 4, outline);
+    set(8, 4, outline);
+    set(9, 4, outline);
+    set(10, 4, outline);
+    fill(8, 5, 9, 5, outline);
+
+    // neck + torso
+    fill(8, 7, 9, 8, outline);
+    fill(8, 8, 9, 8, boneLo);
+    fill(7, 9, 10, 15, outline);
+    fill(8, 10, 9, 14, boneLo);
+    set(8, 11, rib);
+    set(9, 11, rib);
+    set(8, 13, rib);
+    set(9, 13, rib);
+
+    // left arm to bow
+    fill(5, 8, 7, 9, outline);
+    fill(6, 8, 6, 8, bone);
+    // right arm
+    fill(11, 8, 13, 9, outline);
+    fill(12, 8, 12, 8, bone);
+
+    // pelvis
+    fill(7, 16, 10, 17, outline);
+    fill(8, 16, 9, 16, bone);
+
+    // legs
+    fill(7, 18, 8, 21, outline);
+    fill(9, 18, 10, 21, outline);
+    fill(8, 18, 8, 20, bone);
+    fill(9, 18, 9, 20, bone);
+
+    if (frame === 1) {
+      set(7, 21, bone);
+      set(10, 21, outline);
+      set(9, 21, boneLo);
+    } else {
+      set(8, 21, bone);
+      set(9, 21, bone);
+    }
 
     return { w, h, p };
   }
@@ -1939,25 +2411,43 @@ function initFights() {
   // Start in menu state; clicking the mob starts the fight.
   const startFight = (mode) => {
     fightStarted = true;
-    fightMode = mode === "horde" ? "horde" : mode === "techno" ? "techno" : "single";
-    if (mode === "horde") {
-      dogs = [
-        makeDog(world.w * 0.72, world.h * 0.40),
-        makeDog(world.w * 0.80, world.h * 0.52),
-        makeDog(world.w * 0.70, world.h * 0.58),
-      ];
-      if (enemyLabel) enemyLabel.textContent = "Dog Horde!!!";
-    } else if (mode === "techno") {
-      dogs = [makeTechnoDog(world.w * 0.76, world.h * 0.45)];
-      if (enemyLabel) enemyLabel.textContent = "Techno Super Dog";
+    arrows = [];
+    if (mode === "skeleton") {
+      fightMode = "skeleton";
+      terrainType = "paintball";
+      paintballObstacles = buildPaintballObstacles(world.w, world.h);
+      slideDestroyed = true;
+      dogs = [makeSkeleton(world.w * 0.78, world.h * 0.42)];
+      if (enemyLabel) enemyLabel.textContent = "Skeleton";
     } else {
-      dogs = [makeDog(world.w * 0.75, world.h * 0.45)];
-      if (enemyLabel) enemyLabel.textContent = "Rogue Dog";
+      terrainType = "playground";
+      paintballObstacles = [];
+      fightMode = mode === "horde" ? "horde" : mode === "techno" ? "techno" : "single";
+      if (mode === "horde") {
+        dogs = [
+          makeDog(world.w * 0.72, world.h * 0.40),
+          makeDog(world.w * 0.80, world.h * 0.52),
+          makeDog(world.w * 0.70, world.h * 0.58),
+        ];
+        if (enemyLabel) enemyLabel.textContent = "Dog Horde!!!";
+      } else if (mode === "techno") {
+        dogs = [makeTechnoDog(world.w * 0.76, world.h * 0.45)];
+        if (enemyLabel) enemyLabel.textContent = "Techno Super Dog";
+      } else {
+        dogs = [makeDog(world.w * 0.75, world.h * 0.45)];
+        if (enemyLabel) enemyLabel.textContent = "Rogue Dog";
+      }
     }
     reset();
     setUi();
     setStatus(
-      mode === "horde" ? "Fight started: Dog Horde!!!" : mode === "techno" ? "Fight started: Techno Super Dog" : "Fight started: Rogue Dog",
+      mode === "skeleton"
+        ? "Fight started: Skeleton (Paintball Arena)"
+        : mode === "horde"
+          ? "Fight started: Dog Horde!!!"
+          : mode === "techno"
+            ? "Fight started: Techno Super Dog"
+            : "Fight started: Rogue Dog",
     );
   };
 
@@ -1969,6 +2459,9 @@ function initFights() {
   }
   if (mobBtnTechno) {
     mobBtnTechno.addEventListener("click", () => startFight("techno"));
+  }
+  if (mobBtnSkeleton) {
+    mobBtnSkeleton.addEventListener("click", () => startFight("skeleton"));
   }
 
   fightStarted = false;
@@ -2019,6 +2512,10 @@ function initShop() {
   const resetSaveBtn = $("#resetSaveBtn");
   const ownedReleasite = $("#ownedReleasite");
   const lootCrateResult = $("#lootCrateResult");
+  const openUndeadCrate = $("#openUndeadCrate");
+  const undeadCrateResult = $("#undeadCrateResult");
+  const buyBowSpecial = $("#buyBowSpecial");
+  const bowSpecialNote = $("#bowSpecialNote");
   const lootModal = $("#lootModal");
   const lootCanvas = $("#lootCanvas");
   const lootText = $("#lootText");
@@ -2033,6 +2530,12 @@ function initShop() {
     const owned = !!game.armor?.ownedSet;
     if (ownedReleasite) ownedReleasite.textContent = owned ? "Owned (equip in Fights)" : "";
     if (buySet) buySet.disabled = owned || game.money < 300;
+    if (openUndeadCrate) openUndeadCrate.disabled = game.money < 500;
+    if (buyBowSpecial) buyBowSpecial.disabled = game.money < 2500;
+    if (bowSpecialNote) {
+      const n = Number(game.inventory?.counts?.bone_bow ?? 0);
+      bowSpecialNote.textContent = n > 0 ? `You own: ${n}× Bow (equip in Weapons)` : "";
+    }
     if (limitedSection) limitedSection.style.display = LIMITED_RELEASE_CRATE_ENABLED ? "" : "none";
   };
 
@@ -2056,6 +2559,23 @@ function initShop() {
     });
   }
 
+  if (buyBowSpecial) {
+    buyBowSpecial.addEventListener("click", () => {
+      game = normalizeSave(loadSave());
+      if (game.money < 2500) {
+        setStatus("Not enough money for Bow (special)");
+        return refresh();
+      }
+      game.money -= 2500;
+      ensureItemInInventory(game, "bone_bow");
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+      setStatus("Bought: Bow (special deal — 2500$)");
+      runForeverTaskEngine();
+    });
+  }
+
   const showLootModal = (title, drawFn, variant = "basic") => {
     if (!lootModal || !lootCanvas || !lootText) return;
     lootModal.classList.remove("is-hidden");
@@ -2070,14 +2590,19 @@ function initShop() {
     const anim = () => {
       t += 1;
       ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = variant === "limited" ? "#070A12" : "#000000";
+      ctx.fillStyle = variant === "limited" ? "#070A12" : variant === "undead" ? "#0a120e" : "#000000";
       ctx.fillRect(0, 0, W, H);
       // flicker bars
-      const barN = variant === "limited" ? 14 : 10;
+      const barN = variant === "limited" ? 14 : variant === "undead" ? 12 : 10;
       for (let i = 0; i < barN; i++) {
         const y = (Math.random() * H) | 0;
         const a = variant === "limited" ? (Math.random() * 0.22).toFixed(3) : (Math.random() * 0.18).toFixed(3);
-        const c = variant === "limited" ? `rgba(37,228,255,${a})` : `rgba(124,92,255,${a})`;
+        const c =
+          variant === "limited"
+            ? `rgba(37,228,255,${a})`
+            : variant === "undead"
+              ? `rgba(61,255,181,${a})`
+              : `rgba(124,92,255,${a})`;
         ctx.fillStyle = c;
         ctx.fillRect(0, y, W, 2);
       }
@@ -2098,6 +2623,16 @@ function initShop() {
         // latch
         ctx.fillStyle = "rgba(241,208,122,.70)";
         ctx.fillRect(cx - 6, cy - 10, 12, 18);
+      } else if (variant === "undead") {
+        ctx.fillStyle = "rgba(61,255,181,.12)";
+        ctx.fillRect(cx - 44, cy - 32, 88, 56);
+        ctx.fillStyle = "rgba(22,38,32,.95)";
+        ctx.fillRect(cx - 38, cy - 26, 76, 44);
+        ctx.strokeStyle = "rgba(61,255,181,.42)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - 44 + 1, cy - 32 + 1, 88 - 2, 56 - 2);
+        ctx.fillStyle = "rgba(200,70,90,.45)";
+        ctx.fillRect(cx - 5, cy - 9, 10, 16);
       } else {
         ctx.fillStyle = "rgba(255,210,96,.20)";
         ctx.fillRect(cx - 42, cy - 30, 84, 52);
@@ -2163,7 +2698,7 @@ function initShop() {
       game = normalizeSave(loadSave());
       game.stats.releaseCratesOpened += 1;
       saveGame(game);
-      const detail = it.type === "weapon" ? `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "") : `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+      const detail = getItemDetailText(it);
       if (limitedCrateResult) limitedCrateResult.textContent = `Got: ${it.name} (${detail})`;
       showLootModal(`Limited Release: ${it.name}`, (ctx, W, H) => {
         // limited glow + sparkles
@@ -2222,11 +2757,24 @@ function initShop() {
 
     const o = "#0B1230";
     if (it.type === "weapon") {
+      if (it.bow) {
+        const demonic = itemId === "demonic_bow";
+        const st = demonic ? "#3a1520" : "#3d3a33";
+        const acc = demonic ? "#ff3355" : "#6b5a2a";
+        for (let y = 1; y <= 14; y++) px(2, y, o), px(3, y, o);
+        for (let y = 2; y <= 13; y++) px(3, y, st);
+        for (let y = 4; y <= 11; y++) px(8, y, o), px(9, y, o);
+        for (let y = 5; y <= 10; y++) px(8, y, acc), px(9, y, acc);
+        px(7, 7, acc);
+        px(10, 8, acc);
+        return;
+      }
       const isReleasite = itemId.startsWith("releasite_");
-      const blade = isReleasite ? "#F1D07A" : itemId === "forgotten_wood_sword" ? "#A77CFF" : "#D8E4FF";
-      const wood = isReleasite ? "#1A2350" : itemId === "wooden_sword" ? "#8B623A" : "#6A4A2B";
-      const wood2 = isReleasite ? "#D9B55A" : itemId === "forgotten_wood_sword" ? "#6A3FA8" : "#B07D4B";
-      const gem = isReleasite ? "#25E4FF" : itemId === "forgotten_wood_sword" ? "#7C5CFF" : "#25E4FF";
+      const isBoneWeapon = itemId === "bone_sword" || itemId === "undead_blade";
+      const blade = isReleasite ? "#F1D07A" : isBoneWeapon ? "#E8ECF0" : itemId === "forgotten_wood_sword" ? "#A77CFF" : "#D8E4FF";
+      const wood = isReleasite ? "#1A2350" : isBoneWeapon ? "#2a3038" : itemId === "wooden_sword" ? "#8B623A" : "#6A4A2B";
+      const wood2 = isReleasite ? "#D9B55A" : isBoneWeapon ? "#9aa8b8" : itemId === "forgotten_wood_sword" ? "#6A3FA8" : "#B07D4B";
+      const gem = isReleasite ? "#25E4FF" : isBoneWeapon ? "#b8c4d4" : itemId === "forgotten_wood_sword" ? "#7C5CFF" : "#25E4FF";
       // outline
       for (let y = 0; y < 16; y++) for (let x = 0; x < 20; x++) {}
       // blade
@@ -2268,6 +2816,20 @@ function initShop() {
     const gold2 = "#F1D07A";
     const gray = "#AEB8C7";
     const red = "#FF6060";
+    const boneFill = "#c8ccd6";
+    const boneFill2 = "#a8b4c4";
+    const boneAcc = "#7a8698";
+
+    if (itemId === "undead_wraith_chestplate") {
+      for (let y = 4; y <= 11; y++) for (let x = 7; x <= 12; x++) px(x, y, o);
+      for (let y = 5; y <= 10; y++) for (let x = 8; x <= 11; x++) px(x, y, "#1e2a24");
+      px(8, 6, "#3dff9a");
+      px(11, 6, "#3dff9a");
+      px(9, 8, "#ff4460");
+      px(10, 8, "#ff4460");
+      px(9, 9, "rgba(61,255,181,.55)");
+      return;
+    }
 
     if (itemId === "leather_wraith_armor" || itemId === "releasite_wraith_armor") {
       // chest with gold shoulder pad
@@ -2289,29 +2851,33 @@ function initShop() {
     }
 
     if (it.type === "helmet") {
+      const bone = itemId.startsWith("bone_");
       for (let y = 2; y <= 6; y++) for (let x = 7; x <= 12; x++) px(x, y, o);
-      for (let y = 3; y <= 5; y++) for (let x = 8; x <= 11; x++) px(x, y, itemId.startsWith("releasite") ? gold2 : leather2);
-      px(9, 5, itemId.startsWith("releasite") ? gold : leather);
+      for (let y = 3; y <= 5; y++) for (let x = 8; x <= 11; x++) px(x, y, bone ? boneFill2 : itemId.startsWith("releasite") ? gold2 : leather2);
+      px(9, 5, bone ? boneAcc : itemId.startsWith("releasite") ? gold : leather);
       return;
     }
     if (it.type === "boots") {
+      const bone = itemId.startsWith("bone_");
       for (let y = 10; y <= 12; y++) for (let x = 8; x <= 11; x++) px(x, y, o);
-      for (let y = 11; y <= 12; y++) for (let x = 8; x <= 11; x++) px(x, y, itemId.startsWith("releasite") ? gold : leather);
+      for (let y = 11; y <= 12; y++) for (let x = 8; x <= 11; x++) px(x, y, bone ? boneFill : itemId.startsWith("releasite") ? gold : leather);
       return;
     }
     if (it.type === "legs") {
+      const bone = itemId.startsWith("bone_");
       for (let y = 7; y <= 12; y++) for (let x = 8; x <= 9; x++) px(x, y, o), px(x + 2, y, o);
       for (let y = 8; y <= 11; y++) {
-        px(8, y, itemId.startsWith("releasite") ? gold2 : leather2);
-        px(10, y, itemId.startsWith("releasite") ? gold2 : leather2);
+        px(8, y, bone ? boneFill2 : itemId.startsWith("releasite") ? gold2 : leather2);
+        px(10, y, bone ? boneFill2 : itemId.startsWith("releasite") ? gold2 : leather2);
       }
       return;
     }
     if (it.type === "chest") {
+      const bone = itemId.startsWith("bone_");
       for (let y = 4; y <= 11; y++) for (let x = 7; x <= 12; x++) px(x, y, o);
-      for (let y = 5; y <= 10; y++) for (let x = 8; x <= 11; x++) px(x, y, itemId.startsWith("releasite") ? gold2 : leather2);
-      px(9, 7, itemId.startsWith("releasite") ? gold : leather);
-      px(10, 7, itemId.startsWith("releasite") ? gold : leather);
+      for (let y = 5; y <= 10; y++) for (let x = 8; x <= 11; x++) px(x, y, bone ? boneFill2 : itemId.startsWith("releasite") ? gold2 : leather2);
+      px(9, 7, bone ? boneAcc : itemId.startsWith("releasite") ? gold : leather);
+      px(10, 7, bone ? boneAcc : itemId.startsWith("releasite") ? gold : leather);
       return;
     }
   };
@@ -2319,10 +2885,7 @@ function initShop() {
   revealFreeReleaseCrate = (itemId) => {
     if (!LIMITED_RELEASE_CRATE_ENABLED || !itemId || !ITEMS[itemId]) return;
     const it = ITEMS[itemId];
-    const detail =
-      it.type === "weapon"
-        ? `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "")
-        : `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+    const detail = getItemDetailText(it);
     if (limitedCrateResult) limitedCrateResult.textContent = `Event reward (free crate): ${it.name} (${detail})`;
     showLootModal(
       `Event reward: ${it.name}`,
@@ -2363,7 +2926,7 @@ function initShop() {
       updateWeaponsSlots();
 
       const it = ITEMS[itemId];
-      const detail = it.type === "weapon" ? `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "") : `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+      const detail = getItemDetailText(it);
       if (lootCrateResult) lootCrateResult.textContent = `Got: ${it.name} (${detail})`;
 
       showLootModal(`You got: ${it.name}`, (ctx, W, H) => {
@@ -2378,6 +2941,41 @@ function initShop() {
         ctx.fillText(detail, 12, H - 14);
       });
       setStatus(`Loot crate: ${it.name}`);
+      runForeverTaskEngine();
+    });
+  }
+
+  if (openUndeadCrate) {
+    openUndeadCrate.addEventListener("click", () => {
+      game = normalizeSave(loadSave());
+      if (game.money < 500) {
+        setStatus("Not enough money for Undead crate");
+        return refresh();
+      }
+      game.money -= 500;
+      const itemId = rollUndeadLoot();
+      ensureItemInInventory(game, itemId);
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+
+      const it = ITEMS[itemId];
+      const detail = getItemDetailText(it);
+      if (undeadCrateResult) undeadCrateResult.textContent = `Got: ${it.name} (${detail})`;
+
+      showLootModal(
+        `Undead crate: ${it.name}`,
+        (ctx, W, H) => {
+          ctx.fillStyle = "rgba(61,255,181,.08)";
+          ctx.fillRect(0, 0, W, H);
+          drawItemTexture(itemId, ctx, W, H);
+          ctx.fillStyle = "rgba(234,240,255,.90)";
+          ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+          ctx.fillText(detail, 12, H - 14);
+        },
+        "undead",
+      );
+      setStatus(`Undead crate: ${it.name}`);
       runForeverTaskEngine();
     });
   }
