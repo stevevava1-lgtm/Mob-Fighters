@@ -3,7 +3,7 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // --------- Save / Economy ----------
 const SAVE_KEY = "bossFightingSave_v1";
-const ENABLE_ARMY_TECHNO_BOSS = false; // temporary trigger: set true to re-enable boss
+const ENABLE_BOSS_UPDATE_TRIGGER = false; // master trigger for current/next boss updates
 
 function loadSave() {
   try {
@@ -1583,7 +1583,7 @@ function initFights() {
       : d.kind === "techno"
         ? "Techno Super Dog"
         : d.kind === "armyTechno"
-          ? "Army Techno Dog"
+          ? "Boss Update"
         : d.kind === "zombie"
           ? "Zombie"
           : d.kind === "zombieDog"
@@ -2064,7 +2064,7 @@ function initFights() {
           return;
         }
       }
-      setStatus(d0.kind === "armyTechno" ? "Army Techno Dog used Bite" : "Techno Super Dog used Bite");
+      setStatus(d0.kind === "armyTechno" ? "Boss Update used Bite" : "Techno Super Dog used Bite");
       d0.nextActionInMs = 1000;
       return;
     }
@@ -2073,7 +2073,7 @@ function initFights() {
       d0.gattlingShotCdMs = 0;
       d0.gattlingBurstLeftMs = 1300;
       d0.nextActionInMs = 1600;
-      setStatus("Army Techno Dog used Rapid Gattling Shot");
+      setStatus("Boss Update used Rapid Gattling Shot");
       return;
     }
     // laser
@@ -2084,7 +2084,7 @@ function initFights() {
     const isArmy = d0.kind === "armyTechno";
     d0.laserActiveMs = isArmy ? 3000 : 5000;
     d0.nextActionInMs = isArmy ? 4000 : 6000; // active + 1s interval
-    setStatus(isArmy ? "Army Techno Dog fired Super Laser" : "Techno Super Dog fired Laser");
+    setStatus(isArmy ? "Boss Update fired Super Laser" : "Techno Super Dog fired Laser");
   };
 
   function step(dt) {
@@ -3462,8 +3462,8 @@ function initFights() {
       spawnApocalypseWave();
       if (enemyLabel) enemyLabel.textContent = `Apocalypse · Wave ${apocWave}`;
     } else if (mode === "armytechno") {
-      if (!ENABLE_ARMY_TECHNO_BOSS) {
-        setStatus("Army Techno Dog is temporarily unavailable.");
+      if (!ENABLE_BOSS_UPDATE_TRIGGER) {
+        setStatus("Boss Update is temporarily unavailable.");
         fightStarted = false;
         return;
       }
@@ -3484,7 +3484,7 @@ function initFights() {
       militaryObstacles = buildMilitaryTrainingObstacles(world.w, world.h);
       slideDestroyed = false;
       dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
-      if (enemyLabel) enemyLabel.textContent = "Army Techno Dog";
+      if (enemyLabel) enemyLabel.textContent = "Boss Update";
     } else if (mode === "skeleton") {
       fightMode = "skeleton";
       terrainType = "paintball";
@@ -3540,7 +3540,7 @@ function initFights() {
       mode === "apocalypse"
         ? `Apocalypse · Wave ${apocWave} · clear waves for $ + magicoin`
         : mode === "armytechno"
-          ? "Boss fight started: Army Techno Dog (Military Training Base)"
+          ? "Boss fight started: Boss Update (Military Training Base)"
         : mode === "skeleton"
           ? "Fight started: Skeleton (Paintball Arena)"
           : mode === "zombie"
@@ -4242,10 +4242,10 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (armyTechnoBtn && window.gameStartFight) {
     const bossCard = armyTechnoBtn.closest(".shopCard");
-    if (!ENABLE_ARMY_TECHNO_BOSS && bossCard) bossCard.style.display = "none";
+    if (!ENABLE_BOSS_UPDATE_TRIGGER && bossCard) bossCard.style.display = "none";
     armyTechnoBtn.addEventListener("click", () => {
-      if (!ENABLE_ARMY_TECHNO_BOSS) {
-        setStatus("Army Techno Dog is temporarily unavailable.");
+      if (!ENABLE_BOSS_UPDATE_TRIGGER) {
+        setStatus("Boss Update is temporarily unavailable.");
         return;
       }
       const fightTab = document.querySelector('.tab[data-panel="fights"]');
