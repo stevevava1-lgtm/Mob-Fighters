@@ -1,25 +1,26 @@
-name: Tomorrow's Game Update
+name: Tomorrow's Noon Update
 on:
   schedule:
-    # This triggers at 8:00 AM (your local time) on April 16th
-    - cron: '0 0 16 4 *'
-  workflow_dispatch: # This adds a "Run" button so you can test it manually
+    # 12:00 PM (Noon) on April 16, 2026
+    - cron: '0 12 16 4 *'
+      timezone: "Asia/Taipei" 
+  workflow_dispatch:
 
 jobs:
-  build-and-release:
+  update-game:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Package Game
-        run: zip -r Boss-Fighting-Update.zip index.html script.js style.css
+      - name: Zip the game files
+        run: zip -r MobFighters-Update.zip index.html script.js style.css
 
-      - name: Publish Update
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: "v1.1"
-          name: "The Boss Update"
-          files: Boss-Fighting-Update.zip
+          name: "Official Game Update"
+          files: MobFighters-Update.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
