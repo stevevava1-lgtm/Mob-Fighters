@@ -3,7 +3,7 @@ on:
   schedule:
     # Runs at 00:00 UTC on Thursday, April 16, 2026
     - cron: '0 0 16 4 4'
-  workflow_dispatch: # Allows you to trigger it manually if needed
+  workflow_dispatch:
 
 jobs:
   update-game:
@@ -11,8 +11,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: 'release-v1' # This pulls files from your specific release branch
 
-      - name: Run Update Script
-        run: |
-          echo "Executing scheduled update for April 16, 2026..."
-          # Insert your build or update commands here
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "v1.1-update"
+          name: "Official Game Update"
+          body: "Automatic scheduled update for April 16, 2026."
+          # REPLACE 'your-game-file.zip' with the ACTUAL name of your file
+          files: your-game-file.zip 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
