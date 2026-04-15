@@ -3,6 +3,7 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // --------- Save / Economy ----------
 const SAVE_KEY = "bossFightingSave_v1";
+const ENABLE_ARMY_TECHNO_BOSS = false; // temporary trigger: set true to re-enable boss
 
 function loadSave() {
   try {
@@ -10,6 +11,7 @@ function loadSave() {
     if (!raw)
       return {
         money: 0,
+        magicoin: 0,
         armor: {
           ownedSet: false,
           equipped: { helmet: false, chest: false, legs: false, boots: false }, // legacy releasite toggles
@@ -23,15 +25,19 @@ function loadSave() {
           hordeWins: 0,
           technoWins: 0,
           skeletonWins: 0,
+          zombieWins: 0,
+          zombieDogKills: 0,
           totalWins: 0,
           basicCratesOpened: 0,
           releaseCratesOpened: 0,
         },
         forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
+        compensation: { progressBugClaimed: false },
       };
     const parsed = JSON.parse(raw);
     return {
       money: typeof parsed.money === "number" ? parsed.money : 0,
+      magicoin: typeof parsed.magicoin === "number" ? parsed.magicoin : 0,
       armor: {
         ownedSet: !!parsed?.armor?.ownedSet,
         equipped: {
@@ -68,9 +74,12 @@ function loadSave() {
         hordeWins: Number(parsed?.stats?.hordeWins || 0),
         technoWins: Number(parsed?.stats?.technoWins || 0),
         skeletonWins: Number(parsed?.stats?.skeletonWins || 0),
+        zombieWins: Number(parsed?.stats?.zombieWins || 0),
+        zombieDogKills: Number(parsed?.stats?.zombieDogKills || 0),
         totalWins: Number(parsed?.stats?.totalWins || 0),
         basicCratesOpened: Number(parsed?.stats?.basicCratesOpened || 0),
         releaseCratesOpened: Number(parsed?.stats?.releaseCratesOpened || 0),
+        bossCrates: Number(parsed?.stats?.bossCrates || 0),
       },
       forever: {
         stage: Number(parsed?.forever?.stage || 0),
@@ -78,10 +87,14 @@ function loadSave() {
         currentTask: parsed?.forever?.currentTask ?? null,
         readyToClaim: !!parsed?.forever?.readyToClaim,
       },
+      compensation: {
+        progressBugClaimed: !!parsed?.compensation?.progressBugClaimed,
+      },
     };
   } catch {
     return {
       money: 0,
+      magicoin: 0,
       armor: { ownedSet: false, equipped: { helmet: false, chest: false, legs: false, boots: false } },
       inventory: { counts: {} },
       equipped: { helmet: null, chest: null, legs: null, boots: null, weapon1: null, weapon2: null },
@@ -92,11 +105,15 @@ function loadSave() {
         hordeWins: 0,
         technoWins: 0,
         skeletonWins: 0,
+        zombieWins: 0,
+        zombieDogKills: 0,
         totalWins: 0,
         basicCratesOpened: 0,
         releaseCratesOpened: 0,
+        bossCrates: 0,
       },
       forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
+      compensation: { progressBugClaimed: false },
     };
   }
 }
@@ -246,6 +263,35 @@ const ITEMS = {
     hp: 0,
     tint: "boneBow",
   },
+  phantom_sniper: {
+    id: "phantom_sniper",
+    name: "Phantom Sniper",
+    type: "weapon",
+    dmg: 0,
+    phantomSniper: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "phantomSniper",
+  },
+  boss_blade: { id: "boss_blade", name: "Boss Blade", type: "weapon", dmg: 15, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
+  boss_boots: { id: "boss_boots", name: "Boss Boots", type: "boots", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 5, tint: "bossArmor" },
+  boss_helmet: { id: "boss_helmet", name: "Boss Helmet", type: "helmet", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 6, tint: "bossArmor" },
+  boss_leggings: { id: "boss_leggings", name: "Boss Leggings", type: "legs", dmg: 0, rangeMult: 1.0, moveMult: 1.0, hp: 10, tint: "bossArmor" },
+  boss_chestplate: {
+    id: "boss_chestplate",
+    name: "Boss Chestplate",
+    type: "chest",
+    dmg: 0,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 12,
+    dashMult: 1.2,
+    tint: "bossArmor",
+  },
+  laser_blast: { id: "laser_blast", name: "Laser Blast", type: "weapon", dmg: 0, laserBlast: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
+  gattling: { id: "gattling", name: "Gattling", type: "weapon", dmg: 0, gattling: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
+  rpg: { id: "rpg", name: "RPG", type: "weapon", dmg: 0, rpg: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
   undead_wraith_chestplate: {
     id: "undead_wraith_chestplate",
     name: "Undead Wraith Chestplate",
@@ -272,9 +318,17 @@ const ITEMS = {
 
 function getItemDetailText(it) {
   if (!it) return "";
+  if (it.rpg) return "RPG: rocket (80 direct / 30 blast), enemies try to dodge";
+  if (it.gattling) return "Gattling: 10-shot burst, 7 dmg/shot, 3.0s cooldown";
+  if (it.laserBlast) return "Laser Blast: red beam shot, 5 dmg, 3.0s cooldown";
+  if (it.phantomSniper) return "Sniper: long-press on foe → 70 dmg round; slide hits = AoE all";
   if (it.bow) return `Bow: ${it.bowDmg} dmg/arrow (auto-aim)`;
   if (it.type === "weapon") return `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "");
-  return `+${it.hp} HP` + (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "");
+  return (
+    `+${it.hp} HP` +
+    (it.moveMult > 1 ? `, ${it.moveMult}x movement speed` : "") +
+    (it.dashMult > 1 ? `, ${Math.round((it.dashMult - 1) * 100)}% dash distance` : "")
+  );
 }
 
 /** Weights match design: 1/N rarity → weight ∝ 1/N (see shop description). */
@@ -297,6 +351,26 @@ function rollUndeadLoot() {
     if (r < 0) return row.id;
   }
   return "bone_sword";
+}
+
+function rollBossCrateLoot() {
+  const table = [
+    { id: "boss_blade", w: 1 / 1 },
+    { id: "boss_boots", w: 1 / 2 },
+    { id: "boss_helmet", w: 1 / 3 },
+    { id: "boss_leggings", w: 1 / 4 },
+    { id: "boss_chestplate", w: 1 / 6 },
+    { id: "laser_blast", w: 1 / 7 },
+    { id: "gattling", w: 1 / 8 },
+    { id: "rpg", w: 1 / 10 },
+  ];
+  const total = table.reduce((a, row) => a + row.w, 0) || 1;
+  let r = Math.random() * total;
+  for (const row of table) {
+    r -= row.w;
+    if (r <= 0) return row.id;
+  }
+  return "boss_blade";
 }
 
 function ensureItemInInventory(save, itemId) {
@@ -332,6 +406,7 @@ function normalizeSave(save) {
   if (!save.equipped) save.equipped = { helmet: null, chest: null, legs: null, boots: null, weapon1: null, weapon2: null };
   if (!save.redeems) save.redeems = { usedCodes: {} };
   if (!save.redeems.usedCodes || typeof save.redeems.usedCodes !== "object") save.redeems.usedCodes = {};
+  if (save.magicoin === undefined || save.magicoin === null) save.magicoin = 0;
   if (!save.stats) {
     save.stats = {
       rogueKills: 0,
@@ -339,14 +414,22 @@ function normalizeSave(save) {
       hordeWins: 0,
       technoWins: 0,
       skeletonWins: 0,
+      zombieWins: 0,
+      zombieDogKills: 0,
       totalWins: 0,
       basicCratesOpened: 0,
       releaseCratesOpened: 0,
+      bossCrates: 0,
     };
   }
   if (save.stats.skeletonWins === undefined || save.stats.skeletonWins === null) save.stats.skeletonWins = 0;
+  if (save.stats.zombieWins === undefined || save.stats.zombieWins === null) save.stats.zombieWins = 0;
+  if (save.stats.zombieDogKills === undefined || save.stats.zombieDogKills === null) save.stats.zombieDogKills = 0;
+  if (save.stats.bossCrates === undefined || save.stats.bossCrates === null) save.stats.bossCrates = 0;
   if (!save.forever) save.forever = { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false };
   if (typeof save.forever.readyToClaim !== "boolean") save.forever.readyToClaim = false;
+  if (!save.compensation) save.compensation = { progressBugClaimed: false };
+  if (typeof save.compensation.progressBugClaimed !== "boolean") save.compensation.progressBugClaimed = false;
 
   // Ensure releasite pieces exist as owned when set is purchased.
   // Represent them as "1 total", so if equipped -> count 0, else count 1.
@@ -388,21 +471,20 @@ const RANDOM_TASKS = [
   { id: "r_techno", title: "Defeat Techno Dog", reward: 80, type: "delta", goals: [{ key: "technoWins", target: 1, label: "Techno wins" }] },
   { id: "r_skeleton", title: "Defeat a Skeleton", reward: 50, type: "delta", goals: [{ key: "skeletonWins", target: 1, label: "Skeleton wins" }] },
   { id: "r_basic_crate", title: "Open 1 Basic Loot Crate", reward: 40, type: "delta", goals: [{ key: "basicCratesOpened", target: 1, label: "Basic crates opened" }] },
+  { id: "r_zombie_1", title: "Slay 1 zombie", reward: 100, type: "delta", goals: [{ key: "zombieWins", target: 1, label: "Zombie wins" }] },
   {
-    id: "r_event_horde_release",
-    title: "Event: Win 3× Dog Horde",
-    reward: 0,
-    rewardKind: "releaseCrate",
+    id: "r_zombie_5",
+    title: "Slay 5 zombies",
+    reward: 800,
     type: "delta",
-    goals: [{ key: "hordeWins", target: 3, label: "Dog Horde wins" }],
+    goals: [{ key: "zombieWins", target: 5, label: "Zombie wins" }],
   },
   {
-    id: "r_event_techno_release",
-    title: "Event: Win 2× Techno Super Dog",
-    reward: 0,
-    rewardKind: "releaseCrate",
+    id: "r_zombie_dogs_10",
+    title: "Slay 10 zombie dogs",
+    reward: 300,
     type: "delta",
-    goals: [{ key: "technoWins", target: 2, label: "Techno wins" }],
+    goals: [{ key: "zombieDogKills", target: 10, label: "Zombie dog kills" }],
   },
 ];
 
@@ -413,6 +495,8 @@ function cloneStats(stats) {
     hordeWins: Number(stats?.hordeWins || 0),
     technoWins: Number(stats?.technoWins || 0),
     skeletonWins: Number(stats?.skeletonWins || 0),
+    zombieWins: Number(stats?.zombieWins || 0),
+    zombieDogKills: Number(stats?.zombieDogKills || 0),
     totalWins: Number(stats?.totalWins || 0),
     basicCratesOpened: Number(stats?.basicCratesOpened || 0),
     releaseCratesOpened: Number(stats?.releaseCratesOpened || 0),
@@ -447,13 +531,15 @@ function getTaskProgress(task, stats) {
 
 function pickRandomTask(lastRandomId, stats) {
   const sk = Number(stats?.skeletonWins || 0);
+  const allowRareZombie5 = Math.random() < 0.01;
   let candidates = RANDOM_TASKS.filter((t) => t.id !== lastRandomId);
   candidates = candidates.filter((t) => !(t.id === "r_skeleton" && sk < 1));
+  if (!allowRareZombie5) candidates = candidates.filter((t) => t.id !== "r_zombie_5");
   const pick = candidates[(Math.random() * candidates.length) | 0] || RANDOM_TASKS[0];
   return makeTaskState(pick, cloneStats(stats));
 }
 
-/** Fix stuck/old event tasks (e.g. dual goal + open crate) when definitions change. */
+/** Fix stuck/old tasks (e.g. dual goal + open crate) when definitions change. */
 function repairForeverTaskIfStale(save) {
   const t = save.forever?.currentTask;
   if (!t || !t.id) return;
@@ -467,18 +553,17 @@ function repairForeverTaskIfStale(save) {
   if (!hasReleaseGoal && !goalsMismatch) return;
 
   const bs = cloneStats(save.stats);
-  if (t.id === "r_event_horde_release") {
-    const oldBase = Number(t.baseStats?.hordeWins ?? 0);
-    const hordeProg = Math.max(0, save.stats.hordeWins - oldBase);
-    const credit = Math.min(hordeProg, 2);
-    bs.hordeWins = save.stats.hordeWins - credit;
-  } else if (t.id === "r_event_techno_release") {
-    const oldBase = Number(t.baseStats?.technoWins ?? 0);
-    const technoProg = Math.max(0, save.stats.technoWins - oldBase);
-    const credit = Math.min(technoProg, 2);
-    bs.technoWins = save.stats.technoWins - credit;
-  }
   save.forever.currentTask = makeTaskState(def, bs);
+  save.forever.readyToClaim = false;
+}
+
+/** Event release tasks removed — swap to a normal random task (existing items stay in inventory). */
+function migrateOffEventReleaseTasks(save) {
+  const id = save.forever?.currentTask?.id;
+  if (id !== "r_event_horde_release" && id !== "r_event_techno_release") return;
+  const next = pickRandomTask(save.forever.lastRandomId, save.stats);
+  save.forever.lastRandomId = next.id;
+  save.forever.currentTask = next;
   save.forever.readyToClaim = false;
 }
 
@@ -496,6 +581,7 @@ function migrateAllMobsTask(save) {
 
 function ensureForeverTaskState(save) {
   const s = normalizeSave(save);
+  migrateOffEventReleaseTasks(s);
   repairForeverTaskIfStale(s);
   migrateAllMobsTask(s);
   const cur = s.forever?.currentTask;
@@ -535,14 +621,7 @@ function claimForeverTask() {
     return;
   }
   const curTask = s.forever.currentTask;
-  const rk = curTask.rewardKind || "money";
-  if (rk === "releaseCrate") {
-    const itemId = rollLimitedReleaseLoot();
-    ensureItemInInventory(s, itemId);
-    s.stats.releaseCratesOpened = (s.stats.releaseCratesOpened || 0) + 1;
-    saveGame(s);
-    revealFreeReleaseCrate?.(itemId);
-  } else {
+  if ((curTask.rewardKind || "money") === "money") {
     s.money = (s.money || 0) + Number(curTask.reward || 0);
   }
   if (s.forever.stage < FIRST_TASKS.length) {
@@ -565,7 +644,7 @@ function claimForeverTask() {
 }
 
 // --------- Redeem / Limited Release Crate ----------
-const LIMITED_RELEASE_CRATE_ENABLED = true; // set to false when you want to remove it
+const LIMITED_RELEASE_CRATE_ENABLED = false; // Limited Release / releasite redeem crate (off)
 
 const LIMITED_RELEASE_CODES = Object.freeze(["Hb03", "Lhyu", "Relese!", "z00ms4hur", "uracat", "april9th", "tester-001"]);
 
@@ -594,6 +673,7 @@ function rollLimitedReleaseLoot() {
 }
 
 function redeemLimitedReleaseCrate(codeRaw) {
+  if (!LIMITED_RELEASE_CRATE_ENABLED) return { ok: false, reason: "disabled" };
   const code = String(codeRaw ?? "");
   if (!LIMITED_RELEASE_CODES.includes(code)) return { ok: false, reason: "invalid" };
 
@@ -734,8 +814,7 @@ function updateWeaponsSlots() {
 
 let updateShopUi = null;
 let updateForeverUi = null;
-/** Set in initShop: (itemId) => void — shows Limited Release reveal after event task */
-let revealFreeReleaseCrate = null;
+let revealBossCrateRewards = null;
 
 // Simple pixel robot renderer (canvas, crisp pixels)
 function drawRobot(canvas) {
@@ -939,6 +1018,15 @@ function buildPaintballObstacles(W, H) {
   ];
 }
 
+function buildMilitaryTrainingObstacles(W, H) {
+  return [
+    { x: W * 0.46 - 90, y: H * 0.5 - 160, w: 180, h: 72 },
+    { x: W * 0.46 - 90, y: H * 0.5 + 80, w: 180, h: 72 },
+    { x: W * 0.5 - 230, y: H * 0.5 - 40, w: 120, h: 110 },
+    { x: W * 0.5 + 110, y: H * 0.5 - 40, w: 120, h: 110 },
+  ];
+}
+
 function initFights() {
   const canvas = $("#fightCanvas");
   if (!canvas) return;
@@ -950,6 +1038,7 @@ function initFights() {
   const mobBtnHorde = $("#mob-dog-horde");
   const mobBtnTechno = $("#mob-techno-super-dog");
   const mobBtnSkeleton = $("#mob-skeleton");
+  const mobBtnZombie = $("#mob-zombie");
   const moneyText = $("#moneyText");
   const arenaTerrainLabel = $("#arenaTerrainLabel");
 
@@ -969,11 +1058,13 @@ function initFights() {
     boots: $("#equipBoots"),
   };
 
+  const viewW = canvas.width;
+  const viewH = canvas.height;
   const world = {
-    w: canvas.width,
-    h: canvas.height,
-    // Big slide in the middle (solid, can't walk through)
-    slide: { x: canvas.width / 2 - 130, y: canvas.height / 2 - 90, w: 260, h: 180 },
+    w: viewW,
+    h: viewH,
+    slide: { x: viewW / 2 - 130, y: viewH / 2 - 90, w: 260, h: 180 },
+    slides: [],
   };
 
   const player = {
@@ -990,7 +1081,19 @@ function initFights() {
     dashCdMs: 900,
     dashCdLeft: 0,
     usingBow: false,
+    usingPhantomSniper: false,
+    usingLaserBlast: false,
+    usingGattling: false,
+    usingRpg: false,
     bowDmg: 0,
+    phantomCdLeft: 0,
+    phantomCdMs: 1100,
+    dashMult: 1.0,
+    gattlingShotsLeft: 0,
+    gattlingShotCdLeft: 0,
+    laserFxMs: 0,
+    laserFxFrom: null,
+    laserFxTo: null,
   };
 
   const makeDog = (x, y) => ({
@@ -1050,6 +1153,57 @@ function initFights() {
     laserLen: 4000,
     laserHalfW: 16,
   });
+  const makeArmyTechnoDog = (x, y) => ({
+    ...makeTechnoDog(x, y),
+    r: 39,
+    hpMax: 500,
+    hp: 500,
+    speed: 190,
+    dmg: 10,
+    kind: "armyTechno",
+    attackPattern: ["bite", "gattling", "laser", "bite", "gattling", "laser", "gattling", "bite"],
+    laserDps: 8,
+    laserActiveMs: 0,
+    laserColor: "purple",
+    gattlingShots: 0,
+    gattlingIntervalMs: 90,
+    gattlingBurstLeftMs: 0,
+    gattlingShotCdMs: 0,
+  });
+  const makeZombie = (x, y) => ({
+    x,
+    y,
+    r: 17,
+    hpMax: 140,
+    hp: 140,
+    speed: 200,
+    cdMs: 1000,
+    cdLeft: 0,
+    dmg: 15,
+    mode: "charge",
+    justHitRetreatMs: 550,
+    retreatLeft: 0,
+    rewarded: false,
+    kind: "zombie",
+    summonCdMs: 10000,
+    summonCdLeft: 5000,
+  });
+  const makeZombieDog = (x, y) => ({
+    x,
+    y,
+    r: 13,
+    hpMax: 10,
+    hp: 10,
+    speed: 250,
+    cdMs: 1000,
+    cdLeft: 0,
+    dmg: 5,
+    mode: "charge",
+    justHitRetreatMs: 550,
+    retreatLeft: 0,
+    rewarded: false,
+    kind: "zombieDog",
+  });
   let dogs = [makeDog(world.w * 0.75, world.h * 0.45)];
 
   const keys = new Set();
@@ -1060,30 +1214,72 @@ function initFights() {
   let lastMove = { x: 1, y: 0 };
   let animT = 0;
   let rewardGranted = false;
-  let fightMode = "single"; // single | horde | techno | skeleton
-  let terrainType = "playground"; // playground | paintball
+  let fightMode = "single"; // single | horde | techno | skeleton | zombie | apocalypse | armytechno
+  let terrainType = "playground"; // playground | paintball | apocalypse | military
+  let apocWave = 1;
   let paintballObstacles = [];
+  let militaryObstacles = [];
   let arrows = [];
+  let phantomBullets = [];
+  let rockets = [];
+  let phantomLongPressStart = null;
+  let phantomLockedTarget = null;
+  let phantomUniversalBlastMs = 0;
+  let phantomUniversalBlastX = 0;
+  let phantomUniversalBlastY = 0;
+  let phantomAimX = world.w * 0.5;
+  let phantomAimY = world.h * 0.5;
+  let lastCamX = 0;
+  let lastCamY = 0;
   let playerMoving = false;
   let slideDestroyed = false;
   let slideLaserMs = 0;
   let slideExplosionMs = 0;
+  let activeWeaponSlot = "weapon1"; // weapon1 | weapon2
+
+  const getSlideBoxes = () => {
+    if (terrainType === "paintball") return [];
+    if (slideDestroyed) return [];
+    if ((terrainType === "apocalypse" || terrainType === "military") && world.slides.length) return world.slides;
+    return [world.slide];
+  };
 
   const getSolidObstacles = () => {
     if (terrainType === "paintball") return paintballObstacles;
-    if (!slideDestroyed) return [world.slide];
-    return [];
+    if (terrainType === "military") return [...getSlideBoxes(), ...militaryObstacles];
+    return getSlideBoxes();
   };
 
+  const getCameraOffset = () => {
+    if (!(terrainType === "apocalypse" || terrainType === "military") || !fightStarted) return { x: 0, y: 0 };
+    const vw = canvas.width;
+    const vh = canvas.height;
+    // Keep some on-screen movement instead of hard-centering.
+    const tx = player.x - vw * 0.38;
+    const ty = player.y - vh * 0.38;
+    return {
+      x: clamp(tx, 0, Math.max(0, world.w - vw)),
+      y: clamp(ty, 0, Math.max(0, world.h - vh)),
+    };
+  };
+
+  const magicoinHud = $("#magicoinText");
   const updateMoneyUi = () => {
-    if (!moneyText) return;
-    const s = loadSave();
-    moneyText.textContent = `$${s.money}`;
+    const s = normalizeSave(loadSave());
+    if (moneyText) moneyText.textContent = `$${s.money}`;
+    if (magicoinHud) magicoinHud.textContent = `${s.magicoin ?? 0} magicoin`;
   };
 
   const addMoney = (amount) => {
-    const s = loadSave();
+    const s = normalizeSave(loadSave());
     s.money = (s.money || 0) + amount;
+    saveGame(s);
+    updateMoneyUi();
+  };
+
+  const addMagicoin = (amount) => {
+    const s = normalizeSave(loadSave());
+    s.magicoin = (s.magicoin || 0) + amount;
     saveGame(s);
     updateMoneyUi();
   };
@@ -1106,45 +1302,151 @@ function initFights() {
     const chest = eq.chest ? ITEMS[eq.chest] : null;
     const legs = eq.legs ? ITEMS[eq.legs] : null;
     const boots = eq.boots ? ITEMS[eq.boots] : null;
-    const weapon1 = eq.weapon1 ? ITEMS[eq.weapon1] : null;
+    const weaponId = eq[activeWeaponSlot] ?? null;
+    const weapon = weaponId ? ITEMS[weaponId] : null;
 
     const hpBonus = (helmet?.hp ?? 0) + (chest?.hp ?? 0) + (legs?.hp ?? 0) + (boots?.hp ?? 0);
     const moveMult = Math.max(1.0, (chest?.moveMult ?? 1.0));
+    const baseHp = fightMode === "apocalypse" ? 1000 : 100;
+    const armorHpMult = fightMode === "apocalypse" ? 10 : 1;
 
-    if (weapon1?.bow) {
-      player.usingBow = true;
-      player.bowDmg = Number(weapon1.bowDmg ?? 0);
+    if (weapon?.rpg) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = true;
+      player.bowDmg = 0;
       player.dmg = 5;
-      player.rangeMult = weapon1?.rangeMult ?? 1.0;
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
+    } else if (weapon?.gattling) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = true;
+      player.usingRpg = false;
+      player.bowDmg = 0;
+      player.dmg = 5;
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
+    } else if (weapon?.laserBlast) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = true;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.bowDmg = 0;
+      player.dmg = 5;
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
+    } else if (weapon?.phantomSniper) {
+      player.usingBow = false;
+      player.usingPhantomSniper = true;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.bowDmg = 0;
+      player.dmg = 5;
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
+    } else if (weapon?.bow) {
+      player.usingBow = true;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.bowDmg = Number(weapon.bowDmg ?? 0);
+      player.dmg = 5;
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
     } else {
       player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
       player.bowDmg = 0;
-      player.dmg = 5 + (weapon1?.dmg ?? 0);
-      player.rangeMult = weapon1?.rangeMult ?? 1.0;
+      player.dmg = 5 + (weapon?.dmg ?? 0);
+      player.rangeMult = weapon?.rangeMult ?? 1.0;
     }
     player.speed = 170 * moveMult;
+    player.dashMult = chest?.dashMult ?? 1.0;
 
-    const newMax = 100 + hpBonus;
+    const newMax = baseHp + hpBonus * armorHpMult;
     const delta = newMax - player.hpMax;
     player.hpMax = newMax;
     player.hp = clamp(player.hp + delta, 0, player.hpMax);
 
     if (fightHintEl) {
-      const w = weapon1;
-      if (w?.bow) {
-        fightHintEl.textContent = `${w.name}: ${player.bowDmg} dmg/arrow (auto-aim). Cooldown: 1.0s`;
+      const w = weapon;
+      const slotLabel = activeWeaponSlot === "weapon1" ? "Weapon 1" : "Weapon 2";
+      if (w?.phantomSniper) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: long-press ~0.4s on enemy → 70 dmg. Slide hit = blast (hurts all). CD ${(player.phantomCdMs / 1000).toFixed(1)}s`;
+      } else if (w?.rpg) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: rocket shot (80 direct / 30 blast). Enemies dodge. CD 3.0s`;
+      } else if (w?.gattling) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: 10-shot burst, 7 dmg/shot. CD 3.0s`;
+      } else if (w?.laserBlast) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: red laser shot, 5 dmg. CD 3.0s`;
+      } else if (w?.bow) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: ${player.bowDmg} dmg/arrow (auto-aim). Cooldown: 1.0s`;
       } else {
-        fightHintEl.textContent = `Equipped weapon damage: ${player.dmg}. Cooldown: 1.0s`;
+        fightHintEl.textContent = `${slotLabel} · Equipped weapon damage: ${player.dmg}. Cooldown: 1.0s`;
       }
     }
   };
 
+  const rollApocMob = (x, y) => {
+    const r = Math.random();
+    if (r < 0.28) return makeDog(x, y);
+    if (r < 0.5) return makeSkeleton(x, y);
+    if (r < 0.72) return makeTechnoDog(x, y);
+    return makeZombie(x, y);
+  };
+
+  const randomApocSpawnPoint = () => {
+    const boxes = getSlideBoxes();
+    for (let t = 0; t < 48; t++) {
+      const x = 52 + Math.random() * (world.w - 104);
+      const y = 52 + Math.random() * (world.h - 104);
+      let ok = true;
+      for (const box of boxes) {
+        if (circleIntersectsAabb(x, y, 24, box)) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return { x, y };
+    }
+    return { x: world.w * 0.5, y: world.h * 0.5 };
+  };
+
+  const spawnApocalypseWave = () => {
+    const n = 3 + (apocWave - 1);
+    dogs = [];
+    for (let i = 0; i < n; i++) {
+      const p = randomApocSpawnPoint();
+      dogs.push(rollApocMob(p.x, p.y));
+    }
+  };
+
   const reset = () => {
+    activeWeaponSlot = "weapon1";
+    if (fightMode === "zombie" && fightStarted) {
+      dogs = [makeZombie(world.w * 0.72, world.h * 0.42)];
+    } else if (fightMode === "apocalypse" && fightStarted) {
+      apocWave = 1;
+      spawnApocalypseWave();
+    } else if (fightMode === "armytechno" && fightStarted) {
+      dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
+    }
+
     player.hp = player.hpMax;
     player.cdLeft = 0;
     player.dashCdLeft = 0;
-    player.x = world.w * 0.25;
-    player.y = world.h * 0.65;
+    if (fightMode === "apocalypse") {
+      player.x = world.w * 0.5;
+      player.y = world.h * 0.5;
+    } else {
+      player.x = world.w * 0.25;
+      player.y = world.h * 0.65;
+    }
 
     for (const d of dogs) {
       d.hp = d.hpMax;
@@ -1160,12 +1462,26 @@ function initFights() {
       if (d.kind === "skeleton") {
         d.shootCdLeft = 600;
       }
+      if (d.kind === "zombie") {
+        d.summonCdLeft = 5000;
+        d._zombiePhase2 = false;
+      }
     }
 
     gameOver = false;
     rewardGranted = false;
     arrows = [];
-    if (terrainType === "playground") {
+    phantomBullets = [];
+    rockets = [];
+    phantomLongPressStart = null;
+    phantomLockedTarget = null;
+    phantomUniversalBlastMs = 0;
+    player.gattlingShotsLeft = 0;
+    player.gattlingShotCdLeft = 0;
+    player.laserFxMs = 0;
+    player.laserFxFrom = null;
+    player.laserFxTo = null;
+    if (terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") {
       slideDestroyed = false;
       slideLaserMs = 0;
       slideExplosionMs = 0;
@@ -1175,8 +1491,9 @@ function initFights() {
 
   const setUi = () => {
     const pPct = clamp(player.hp / player.hpMax, 0, 1) * 100;
-    const totalMax = dogs.reduce((a, d) => a + d.hpMax, 0) || 1;
-    const totalHp = dogs.reduce((a, d) => a + Math.max(0, d.hp), 0);
+    const barDogs = fightMode === "zombie" ? dogs.filter((d) => d.kind !== "zombieDog") : dogs;
+    const totalMax = barDogs.reduce((a, d) => a + d.hpMax, 0) || 1;
+    const totalHp = barDogs.reduce((a, d) => a + Math.max(0, d.hp), 0);
     const dPct = clamp(totalHp / totalMax, 0, 1) * 100;
     if (ui.playerFill) ui.playerFill.style.width = `${pPct}%`;
     if (ui.dogFill) ui.dogFill.style.width = `${dPct}%`;
@@ -1184,7 +1501,8 @@ function initFights() {
     if (ui.dogText) ui.dogText.textContent = `${totalHp} / ${totalMax}`;
 
     const pReady = player.cdLeft <= 0 ? "ready" : `${(player.cdLeft / 1000).toFixed(1)}s`;
-    const dogCdLeft = dogs.reduce((m, d) => Math.min(m, d.cdLeft ?? 0), Infinity);
+    const cdPool = fightMode === "zombie" ? dogs.filter((d) => d.kind !== "zombieDog") : dogs;
+    const dogCdLeft = cdPool.reduce((m, d) => Math.min(m, d.cdLeft ?? 0), Infinity);
     const dReady = dogCdLeft <= 0 ? "ready" : `${(dogCdLeft / 1000).toFixed(1)}s`;
     const dashReady = player.dashCdLeft <= 0 ? "ready" : `${(player.dashCdLeft / 1000).toFixed(1)}s`;
     if (ui.cooldowns) ui.cooldowns.textContent = `CD: you ${pReady} | dash ${dashReady} | dog ${dReady}`;
@@ -1202,8 +1520,17 @@ function initFights() {
 
     if (arenaTerrainLabel) {
       if (!fightStarted) arenaTerrainLabel.textContent = "Terrain: —";
+      else if (terrainType === "apocalypse")
+        arenaTerrainLabel.textContent = `Apocalypse · open map ${world.w}×${world.h} · 4 slides`;
       else if (terrainType === "paintball") arenaTerrainLabel.textContent = "Terrain: Paintball Arena (7 bunkers)";
+      else if (terrainType === "military") arenaTerrainLabel.textContent = "Terrain: Military Training Base Arena";
       else arenaTerrainLabel.textContent = slideDestroyed ? "Terrain: Playground (slide destroyed)" : "Terrain: Playground (slide is solid)";
+    }
+
+    if (fightStarted && player.usingPhantomSniper) {
+      canvas.style.cursor = "none";
+    } else {
+      canvas.style.cursor = "";
     }
   };
 
@@ -1218,6 +1545,18 @@ function initFights() {
     if (isTypingTarget) return;
 
     const k = e.key.toLowerCase();
+    if (down && k === "scrolllock") {
+      activeWeaponSlot = activeWeaponSlot === "weapon1" ? "weapon2" : "weapon1";
+      applyLoadout();
+      setUi();
+      const eq = loadEquipped();
+      const itemId = eq[activeWeaponSlot];
+      const itemName = itemId && ITEMS[itemId] ? ITEMS[itemId].name : "Fists";
+      const slotName = activeWeaponSlot === "weapon1" ? "Weapon 1" : "Weapon 2";
+      setStatus(`Switched to ${slotName}: ${itemName}`);
+      e.preventDefault();
+      return;
+    }
     const map = { arrowup: "w", arrowdown: "s", arrowleft: "a", arrowright: "d" };
     const kk = map[k] ?? k;
     if (["w", "a", "s", "d"].includes(kk)) {
@@ -1238,22 +1577,213 @@ function initFights() {
   window.addEventListener("keydown", (e) => onKey(e, true));
   window.addEventListener("keyup", (e) => onKey(e, false));
 
+  const mobNameFrom = (d) =>
+    d.kind === "skeleton"
+      ? "Skeleton"
+      : d.kind === "techno"
+        ? "Techno Super Dog"
+        : d.kind === "armyTechno"
+          ? "Army Techno Dog"
+        : d.kind === "zombie"
+          ? "Zombie"
+          : d.kind === "zombieDog"
+            ? "Zombie Dog"
+            : "Rogue Dog";
+
+  const PHANTOM_LONG_PRESS_MS = 420;
+  const PHANTOM_BLAST_RADIUS = 170;
+  const PHANTOM_BLAST_DMG = 50;
+
+  const screenToWorld = (clientX, clientY) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const lx = (clientX - rect.left) * scaleX;
+    const ly = (clientY - rect.top) * scaleY;
+    if ((terrainType === "apocalypse" || terrainType === "military") && fightStarted) {
+      return { x: lx + lastCamX, y: ly + lastCamY };
+    }
+    return { x: lx, y: ly };
+  };
+
+  const getDogUnderWorldPos = (wx, wy) => {
+    for (const d0 of dogs) {
+      if (d0.hp <= 0) continue;
+      if (Math.hypot(wx - d0.x, wy - d0.y) <= d0.r + 10) return d0;
+    }
+    return null;
+  };
+
+  const triggerPhantomUniversalExplosion = (cx, cy, hitSlideBox = null) => {
+    phantomUniversalBlastMs = 780;
+    phantomUniversalBlastX = cx;
+    phantomUniversalBlastY = cy;
+    const R = PHANTOM_BLAST_RADIUS;
+    const splash = PHANTOM_BLAST_DMG;
+    if (hitSlideBox) {
+      const ppx = clamp(player.x, hitSlideBox.x, hitSlideBox.x + hitSlideBox.w);
+      const ppy = clamp(player.y, hitSlideBox.y, hitSlideBox.y + hitSlideBox.h);
+      const pDist = Math.hypot(player.x - ppx, player.y - ppy);
+      // "2 player lengths" => 2 * (diameter) => 4 * radius.
+      if (pDist <= player.r * 4) {
+        player.hp = clamp(player.hp - splash, 0, player.hpMax);
+      }
+      for (const d0 of dogs) {
+        if (d0.hp <= 0) continue;
+        const dx = clamp(d0.x, hitSlideBox.x, hitSlideBox.x + hitSlideBox.w);
+        const dy = clamp(d0.y, hitSlideBox.y, hitSlideBox.y + hitSlideBox.h);
+        const dDist = Math.hypot(d0.x - dx, d0.y - dy);
+        // "2 monster lengths" => 2 * (diameter) => 4 * radius.
+        if (dDist <= d0.r * 4) {
+          d0.hp = clamp(d0.hp - splash, 0, d0.hpMax);
+        }
+      }
+    } else {
+      // Fallback radial behavior if no slide box was provided.
+      player.hp = clamp(player.hp - splash, 0, player.hpMax);
+      for (const d0 of dogs) {
+        if (d0.hp <= 0) continue;
+        if (Math.hypot(d0.x - cx, d0.y - cy) <= R + d0.r) {
+          d0.hp = clamp(d0.hp - splash, 0, d0.hpMax);
+        }
+      }
+    }
+    setStatus("Phantom round: slide detonation — all caught in the blast!");
+    if (player.hp <= 0) {
+      gameOver = true;
+      setStatus("You were defeated");
+    }
+  };
+
+  const firePhantomShot = (targetDog) => {
+    if (!targetDog || targetDog.hp <= 0) return;
+    const adx = targetDog.x - player.x;
+    const ady = targetDog.y - player.y;
+    const an = Math.hypot(adx, ady) || 1;
+    const sp = 1250;
+    const ux = adx / an;
+    const uy = ady / an;
+    phantomBullets.push({
+      x: player.x + ux * 26,
+      y: player.y + uy * 26,
+      vx: ux * sp,
+      vy: uy * sp,
+      r: 4,
+      dmg: 70,
+    });
+    setStatus("Phantom round away!");
+  };
+
+  const explodeRpg = (cx, cy, directTarget = null) => {
+    for (const d0 of dogs) {
+      if (d0.hp <= 0) continue;
+      const dist = Math.hypot(d0.x - cx, d0.y - cy);
+      let dmg = 0;
+      if (directTarget && d0 === directTarget) dmg = 80;
+      else if (dist <= 95 + d0.r) dmg = 30;
+      if (dmg > 0) d0.hp = clamp(d0.hp - dmg, 0, d0.hpMax);
+    }
+    setStatus("RPG explosion!");
+  };
+
+  const fireRpg = (targetDog) => {
+    if (!targetDog || targetDog.hp <= 0) return;
+    const adx = targetDog.x - player.x;
+    const ady = targetDog.y - player.y;
+    const an = Math.hypot(adx, ady) || 1;
+    const ux = adx / an;
+    const uy = ady / an;
+    rockets.push({
+      x: player.x + ux * 22,
+      y: player.y + uy * 22,
+      vx: ux * 520,
+      vy: uy * 520,
+      r: 6,
+      ally: true,
+    });
+    setStatus("RPG launched!");
+  };
+
+  const fireLaserBlast = (targetDog) => {
+    if (!targetDog || targetDog.hp <= 0) return;
+    const adx = targetDog.x - player.x;
+    const ady = targetDog.y - player.y;
+    const an = Math.hypot(adx, ady) || 1;
+    const ux = adx / an;
+    const uy = ady / an;
+    const x2 = player.x + ux * 4000;
+    const y2 = player.y + uy * 4000;
+    let bestHit = null;
+    let bestDist = Infinity;
+    for (const d0 of dogs) {
+      if (d0.hp <= 0) continue;
+      const dist = distancePointToSegment(d0.x, d0.y, player.x, player.y, x2, y2);
+      if (dist <= d0.r + 6) {
+        const dAlong = Math.hypot(d0.x - player.x, d0.y - player.y);
+        if (dAlong < bestDist) {
+          bestDist = dAlong;
+          bestHit = d0;
+        }
+      }
+    }
+    if (bestHit) {
+      bestHit.hp = clamp(bestHit.hp - 5, 0, bestHit.hpMax);
+      setStatus(`Laser Blast hit ${mobNameFrom(bestHit)} for 5`);
+    } else {
+      setStatus("Laser Blast fired");
+    }
+    player.laserFxMs = 180;
+    player.laserFxFrom = { x: player.x, y: player.y };
+    player.laserFxTo = { x: x2, y: y2 };
+  };
+
   canvas.addEventListener("mousedown", (e) => {
-    if (e.button === 0) mouseDown = true;
+    if (e.button === 0) {
+      mouseDown = true;
+      if (player.usingPhantomSniper && fightStarted && !gameOver) {
+        const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+        phantomAimX = wx;
+        phantomAimY = wy;
+        phantomLongPressStart = performance.now();
+        phantomLockedTarget = getDogUnderWorldPos(wx, wy);
+      }
+    }
     if (e.button === 2) {
       e.preventDefault();
       tryDash();
     }
   });
+  canvas.addEventListener("mousemove", (e) => {
+    const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+    phantomAimX = wx;
+    phantomAimY = wy;
+  });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   window.addEventListener("mouseup", (e) => {
     if (e.button !== 0) return;
+    if (
+      player.usingPhantomSniper &&
+      fightStarted &&
+      !gameOver &&
+      phantomLongPressStart != null &&
+      phantomLockedTarget &&
+      player.phantomCdLeft <= 0
+    ) {
+      const dur = performance.now() - phantomLongPressStart;
+      if (dur >= PHANTOM_LONG_PRESS_MS && phantomLockedTarget.hp > 0) {
+        firePhantomShot(phantomLockedTarget);
+        player.phantomCdLeft = player.phantomCdMs;
+      }
+    }
+    phantomLongPressStart = null;
+    phantomLockedTarget = null;
     mouseDown = false;
   });
 
   const tryPlayerAttack = () => {
     if (!fightStarted) return;
     if (gameOver) return;
+    if (player.usingPhantomSniper) return;
     if (player.cdLeft > 0) return;
     let best = null;
     let bestD = Infinity;
@@ -1266,6 +1796,24 @@ function initFights() {
       }
     }
     if (!best) return;
+
+    if (player.usingRpg) {
+      player.cdLeft = 3000;
+      fireRpg(best);
+      return;
+    }
+    if (player.usingLaserBlast) {
+      player.cdLeft = 3000;
+      fireLaserBlast(best);
+      return;
+    }
+    if (player.usingGattling) {
+      player.cdLeft = 3000;
+      player.gattlingShotsLeft = 10;
+      player.gattlingShotCdLeft = 0;
+      setStatus("Gattling burst!");
+      return;
+    }
 
     if (player.usingBow) {
       player.cdLeft = player.cdMs;
@@ -1284,9 +1832,7 @@ function initFights() {
         r: 5,
         ally: true,
       });
-      const mobName =
-        best.kind === "skeleton" ? "Skeleton" : best.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
-      setStatus(`Arrow → ${mobName} (${player.bowDmg} dmg)`);
+      setStatus(`Arrow → ${mobNameFrom(best)} (${player.bowDmg} dmg)`);
       return;
     }
 
@@ -1294,9 +1840,7 @@ function initFights() {
     if (bestD > range) return; // melee range
     player.cdLeft = player.cdMs;
     best.hp = clamp(best.hp - player.dmg, 0, best.hpMax);
-    const mobName =
-      best.kind === "skeleton" ? "Skeleton" : best.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
-    setStatus(`Hit ${mobName} for ${player.dmg}`);
+    setStatus(`Hit ${mobNameFrom(best)} for ${player.dmg}`);
   };
 
   const tryDash = () => {
@@ -1304,7 +1848,7 @@ function initFights() {
     if (gameOver) return;
     if (player.dashCdLeft > 0) return;
 
-    const dashDist = 88; // "launch forward a bit"
+    const dashDist = 88 * (player.dashMult ?? 1.0); // "launch forward a bit"
     const d = Math.hypot(lastMove.x, lastMove.y) || 1;
     const ux = lastMove.x / d;
     const uy = lastMove.y / d;
@@ -1325,7 +1869,7 @@ function initFights() {
     if (gameOver) return;
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
-      if (d0.kind === "skeleton" || d0.kind === "techno") continue;
+      if (d0.kind === "skeleton" || d0.kind === "techno" || d0.kind === "armyTechno") continue;
       if (d0.cdLeft > 0) continue;
       const d = len(d0.x - player.x, d0.y - player.y);
       if (d > player.r + d0.r + 10) continue;
@@ -1333,7 +1877,7 @@ function initFights() {
       player.hp = clamp(player.hp - d0.dmg, 0, player.hpMax);
       d0.mode = "retreat";
       d0.retreatLeft = d0.justHitRetreatMs;
-      setStatus(`Rogue Dog hit you for ${d0.dmg}`);
+      setStatus(`${mobNameFrom(d0)} hit you for ${d0.dmg}`);
       if (player.hp <= 0) {
         gameOver = true;
         setStatus("You were defeated");
@@ -1404,6 +1948,17 @@ function initFights() {
     return { tEnter: u1, tExit: u2 };
   };
 
+  const clipLaserToSlides = (x1, y1, x2, y2) => {
+    const boxes = getSlideBoxes();
+    if (!boxes.length) return { x: x2, y: y2 };
+    let bestT = 1;
+    for (const box of boxes) {
+      const hit = segmentClipAabbT(x1, y1 - 2, x2, y2, box);
+      if (hit && hit.tEnter >= 0 && hit.tEnter < bestT) bestT = hit.tEnter;
+    }
+    return { x: x1 + (x2 - x1) * bestT, y: y1 + (y2 - y1) * bestT };
+  };
+
   const technoAttackStep = (d0, dtMs) => {
     if (d0.hp <= 0 || gameOver || !fightStarted) return;
     d0.nextActionInMs -= dtMs;
@@ -1422,9 +1977,14 @@ function initFights() {
       const x2 = d0.x + ux * d0.laserLen;
       const y2 = d0.y + uy * d0.laserLen;
       const dist = distancePointToSegment(player.x, player.y, x1, y1, x2, y2);
-      const onPlayground = terrainType === "playground";
-      const blockedBySlide =
-        onPlayground && !slideDestroyed && segmentIntersectsAabb(x1, y1, player.x, player.y, world.slide);
+      const slideBoxes = getSlideBoxes();
+      let blockedBySlide = false;
+      for (const box of slideBoxes) {
+        if (segmentIntersectsAabb(x1, y1, player.x, player.y, box)) {
+          blockedBySlide = true;
+          break;
+        }
+      }
       if (!blockedBySlide && dist <= player.r + d0.laserHalfW) {
         player.hp = clamp(player.hp - d0.laserDps * (dtMs / 1000), 0, player.hpMax);
         if (player.hp <= 0) {
@@ -1433,7 +1993,7 @@ function initFights() {
         }
       }
 
-      if (onPlayground && !slideDestroyed) {
+    if (terrainType === "playground" && !slideDestroyed) {
         const hitsSlide = segmentIntersectsAabb(x1, y1, x2, y2, world.slide);
         if (hitsSlide) {
           slideLaserMs += dtMs;
@@ -1461,6 +2021,34 @@ function initFights() {
       }
     }
 
+    if ((d0.gattlingShots ?? 0) > 0) {
+      d0.gattlingShotCdMs = Math.max(0, (d0.gattlingShotCdMs ?? 0) - dtMs);
+      while (d0.gattlingShots > 0 && d0.gattlingShotCdMs <= 0) {
+        d0.gattlingShotCdMs = d0.gattlingIntervalMs ?? 90;
+        d0.gattlingShots -= 1;
+        const adx = player.x - d0.x;
+        const ady = player.y - d0.y;
+        const an = Math.hypot(adx, ady) || 1;
+        const ux = adx / an;
+        const uy = ady / an;
+        const spread = (Math.random() * 2 - 1) * 0.5; // about 50% accurate
+        const ca = Math.cos(spread);
+        const sa = Math.sin(spread);
+        const sx = ux * ca - uy * sa;
+        const sy = ux * sa + uy * ca;
+        const sp = 520;
+        arrows.push({
+          x: d0.x + sx * 28,
+          y: d0.y + sy * 28,
+          vx: sx * sp,
+          vy: sy * sp,
+          dmg: 5,
+          r: 4,
+        });
+      }
+      if (d0.gattlingShots <= 0) d0.gattlingBurstLeftMs = 0;
+    }
+
     if (d0.nextActionInMs > 0 || gameOver) return;
     const action = d0.attackPattern[d0.attackIndex % d0.attackPattern.length];
     d0.attackIndex += 1;
@@ -1476,8 +2064,16 @@ function initFights() {
           return;
         }
       }
-      setStatus("Techno Super Dog used Bite");
+      setStatus(d0.kind === "armyTechno" ? "Army Techno Dog used Bite" : "Techno Super Dog used Bite");
       d0.nextActionInMs = 1000;
+      return;
+    }
+    if (action === "gattling") {
+      d0.gattlingShots = 10;
+      d0.gattlingShotCdMs = 0;
+      d0.gattlingBurstLeftMs = 1300;
+      d0.nextActionInMs = 1600;
+      setStatus("Army Techno Dog used Rapid Gattling Shot");
       return;
     }
     // laser
@@ -1485,18 +2081,63 @@ function initFights() {
     const dy = player.y - d0.y;
     const n = Math.hypot(dx, dy) || 1;
     d0.laserDir = { x: dx / n, y: dy / n };
-    d0.laserActiveMs = 5000;
-    d0.nextActionInMs = 6000; // 5s laser + 1s interval
-    setStatus("Techno Super Dog fired Laser");
+    const isArmy = d0.kind === "armyTechno";
+    d0.laserActiveMs = isArmy ? 3000 : 5000;
+    d0.nextActionInMs = isArmy ? 4000 : 6000; // active + 1s interval
+    setStatus(isArmy ? "Army Techno Dog fired Super Laser" : "Techno Super Dog fired Laser");
   };
 
   function step(dt) {
     animT += dt;
+    const cam = getCameraOffset();
+    lastCamX = cam.x;
+    lastCamY = cam.y;
     slideExplosionMs = Math.max(0, slideExplosionMs - dt * 1000);
+    phantomUniversalBlastMs = Math.max(0, phantomUniversalBlastMs - dt * 1000);
     // cooldowns
     player.cdLeft = Math.max(0, player.cdLeft - dt * 1000);
+    player.phantomCdLeft = Math.max(0, player.phantomCdLeft - dt * 1000);
     player.dashCdLeft = Math.max(0, player.dashCdLeft - dt * 1000);
+    player.gattlingShotCdLeft = Math.max(0, player.gattlingShotCdLeft - dt * 1000);
+    player.laserFxMs = Math.max(0, player.laserFxMs - dt * 1000);
     for (const d0 of dogs) d0.cdLeft = Math.max(0, d0.cdLeft - dt * 1000);
+
+    if (player.gattlingShotsLeft > 0) {
+      while (player.gattlingShotsLeft > 0 && player.gattlingShotCdLeft <= 0) {
+        player.gattlingShotCdLeft = 90;
+        player.gattlingShotsLeft -= 1;
+        let best = null;
+        let bestD = Infinity;
+        for (const d0 of dogs) {
+          if (d0.hp <= 0) continue;
+          const dd = Math.hypot(d0.x - player.x, d0.y - player.y);
+          if (dd < bestD) {
+            bestD = dd;
+            best = d0;
+          }
+        }
+        if (!best) break;
+        const adx = best.x - player.x;
+        const ady = best.y - player.y;
+        const an = Math.hypot(adx, ady) || 1;
+        const ux = adx / an;
+        const uy = ady / an;
+        const spread = (Math.random() * 2 - 1) * 0.5;
+        const ca = Math.cos(spread);
+        const sa = Math.sin(spread);
+        const sx = ux * ca - uy * sa;
+        const sy = ux * sa + uy * ca;
+        arrows.push({
+          x: player.x + sx * 20,
+          y: player.y + sy * 20,
+          vx: sx * 520,
+          vy: sy * 520,
+          dmg: 7,
+          r: 4,
+          ally: true,
+        });
+      }
+    }
 
     // player movement
     let vx = 0;
@@ -1549,13 +2190,36 @@ function initFights() {
             });
           }
         }
-        if (d0.kind === "techno") technoAttackStep(d0, dt * 1000);
+        if (d0.kind === "zombie" && fightMode === "zombie") {
+          const phase2 = d0.hp < 60;
+          d0.summonCdMs = phase2 ? 5000 : 10000;
+          if (phase2 && !d0._zombiePhase2) {
+            d0._zombiePhase2 = true;
+            d0.summonCdLeft = Math.min(d0.summonCdLeft ?? 0, 5000);
+          }
+          if (!phase2) d0._zombiePhase2 = false;
+          d0.summonCdLeft = Math.max(0, (d0.summonCdLeft ?? 0) - dt * 1000);
+          if (d0.summonCdLeft <= 0 && d0.hp > 0) {
+            d0.summonCdLeft = d0.summonCdMs;
+            const zx = clamp(d0.x + (Math.random() * 120 - 60), 36, world.w - 36);
+            const zy = clamp(d0.y + (Math.random() * 100 - 50), 36, world.h - 36);
+            dogs.push(makeZombieDog(zx, zy));
+            setStatus("Zombie summoned a zombie dog!");
+          }
+        }
+        if (d0.kind === "techno" || d0.kind === "armyTechno") technoAttackStep(d0, dt * 1000);
         if (gameOver) break;
         let dx = player.x - d0.x;
         let dy = player.y - d0.y;
         let d = Math.hypot(dx, dy) || 1;
 
-        if (d0.kind === "techno" && d0.laserActiveMs > 0) {
+        if (rockets.some((r0) => Math.hypot(d0.x - r0.x, d0.y - r0.y) < 200)) {
+          dx = d0.x - player.x;
+          dy = d0.y - player.y;
+          d = Math.hypot(dx, dy) || 1;
+        }
+
+        if ((d0.kind === "techno" || d0.kind === "armyTechno") && d0.laserActiveMs > 0) {
           // While beaming, keep a safe distance but continue aiming.
           const safeDist = 280;
           if (d < safeDist) {
@@ -1594,8 +2258,14 @@ function initFights() {
 
         const ux = dx / d;
         const uy = dy / d;
-        let ddx = ux * d0.speed * dt;
-        let ddy = uy * d0.speed * dt;
+        let moveSpd = d0.speed;
+        if (d0.kind === "zombie") {
+          moveSpd = player.speed * 1.08;
+          if (d0.hp < 60) moveSpd *= 1.3;
+          if (dogs.some((z) => z.kind === "zombieDog" && z.hp > 0)) moveSpd *= 0.48;
+        }
+        let ddx = ux * moveSpd * dt;
+        let ddy = uy * moveSpd * dt;
 
         let dax = clamp(d0.x + ddx, d0.r, world.w - d0.r);
         let day = clamp(d0.y + ddy, d0.r, world.h - d0.r);
@@ -1627,9 +2297,7 @@ function initFights() {
               if (d0.hp <= 0) continue;
               if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + a.r) {
                 d0.hp = clamp(d0.hp - a.dmg, 0, d0.hpMax);
-                const mobName =
-                  d0.kind === "skeleton" ? "Skeleton" : d0.kind === "techno" ? "Techno Super Dog" : "Rogue Dog";
-                setStatus(`Arrow hit ${mobName} for ${a.dmg}`);
+                setStatus(`Arrow hit ${mobNameFrom(d0)} for ${a.dmg}`);
                 hitDog = true;
                 break;
               }
@@ -1653,7 +2321,75 @@ function initFights() {
         arrows = nextArrows;
       }
 
-      const hasTechno = dogs.some((d0) => d0.kind === "techno" && d0.hp > 0);
+      if (phantomBullets.length && !gameOver) {
+        const nextPb = [];
+        const slideBoxes = getSlideBoxes();
+        for (const b of phantomBullets) {
+          const ox = b.x;
+          const oy = b.y;
+          let x = ox + b.vx * dt;
+          let y = oy + b.vy * dt;
+          let consumed = false;
+          for (const box of slideBoxes) {
+            if (
+              circleIntersectsAabb(x, y, b.r, box) ||
+              segmentIntersectsAabb(ox, oy, x, y, box)
+            ) {
+              const hx = clamp(x, box.x, box.x + box.w);
+              const hy = clamp(y, box.y, box.y + box.h);
+              triggerPhantomUniversalExplosion(hx, hy, box);
+              consumed = true;
+              break;
+            }
+          }
+          if (consumed) continue;
+          for (const d0 of dogs) {
+            if (d0.hp <= 0) continue;
+            if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + b.r) {
+              d0.hp = clamp(d0.hp - b.dmg, 0, d0.hpMax);
+              setStatus(`Phantom round hit ${mobNameFrom(d0)} for ${b.dmg}`);
+              consumed = true;
+              break;
+            }
+          }
+          if (consumed) continue;
+          if (x < -80 || x > world.w + 80 || y < -80 || y > world.h + 80) continue;
+          nextPb.push({ ...b, x, y });
+        }
+        phantomBullets = nextPb;
+      }
+
+      if (rockets.length && !gameOver) {
+        const nextRockets = [];
+        const obs = getSolidObstacles();
+        for (const r0 of rockets) {
+          let x = r0.x + r0.vx * dt;
+          let y = r0.y + r0.vy * dt;
+          let exploded = false;
+          for (const box of obs) {
+            if (circleIntersectsAabb(x, y, r0.r, box)) {
+              explodeRpg(x, y, null);
+              exploded = true;
+              break;
+            }
+          }
+          if (exploded) continue;
+          for (const d0 of dogs) {
+            if (d0.hp <= 0) continue;
+            if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + r0.r) {
+              explodeRpg(x, y, d0);
+              exploded = true;
+              break;
+            }
+          }
+          if (exploded) continue;
+          if (x < -80 || x > world.w + 80 || y < -80 || y > world.h + 80) continue;
+          nextRockets.push({ ...r0, x, y });
+        }
+        rockets = nextRockets;
+      }
+
+      const hasTechno = dogs.some((d0) => (d0.kind === "techno" || d0.kind === "armyTechno") && d0.hp > 0);
       if (!hasTechno) dogHitPlayer();
     }
 
@@ -1663,28 +2399,69 @@ function initFights() {
         if (d0.hp <= 0 && !d0.rewarded) {
           d0.rewarded = true;
           const s = normalizeSave(loadSave());
-          if (d0.kind !== "techno" && d0.kind !== "skeleton") s.stats.rogueKills += 1;
+          if (d0.kind === "zombieDog") s.stats.zombieDogKills = (s.stats.zombieDogKills || 0) + 1;
+          else if (d0.kind !== "techno" && d0.kind !== "armyTechno" && d0.kind !== "skeleton" && d0.kind !== "zombie")
+            s.stats.rogueKills += 1;
           saveGame(s);
         }
       }
       const alive = dogs.some((d0) => d0.hp > 0);
       if (!alive) {
-        gameOver = true;
-        const s = normalizeSave(loadSave());
-        s.stats.totalWins += 1;
-        if (fightMode === "horde") s.stats.hordeWins += 1;
-        else if (fightMode === "techno") s.stats.technoWins += 1;
-        else if (fightMode === "skeleton") s.stats.skeletonWins += 1;
-        else s.stats.singleWins += 1;
-        saveGame(s);
-        if (!rewardGranted) {
-          rewardGranted = true;
-          if (fightMode === "horde") addMoney(50);
-          else if (fightMode === "skeleton") addMoney(70);
-          else addMoney(10);
+        if (fightMode === "apocalypse") {
+          const cash = 300 + (apocWave - 1) * 200;
+          const mc = apocWave >= 5 ? apocWave - 4 : 0;
+          addMoney(cash);
+          if (mc > 0) addMagicoin(mc);
+          apocWave += 1;
+          spawnApocalypseWave();
+          player.hp = player.hpMax;
+          arrows = [];
+          phantomBullets = [];
+          gameOver = false;
+          rewardGranted = false;
+          if (enemyLabel) enemyLabel.textContent = `Apocalypse · Wave ${apocWave}`;
+          setStatus(`Wave ${apocWave - 1} cleared! +$${cash}${mc > 0 ? ` +${mc} magicoin` : ""}`);
+          runForeverTaskEngine();
+        } else {
+          gameOver = true;
+          const s = normalizeSave(loadSave());
+          s.stats.totalWins += 1;
+          if (fightMode === "horde") s.stats.hordeWins += 1;
+          else if (fightMode === "techno") s.stats.technoWins += 1;
+          else if (fightMode === "skeleton") s.stats.skeletonWins += 1;
+          else if (fightMode === "zombie") s.stats.zombieWins += 1;
+          else if (fightMode === "armytechno") s.stats.technoWins += 1;
+          else s.stats.singleWins += 1;
+          saveGame(s);
+          if (!rewardGranted) {
+            rewardGranted = true;
+            if (fightMode === "horde") addMoney(50);
+            else if (fightMode === "skeleton") addMoney(70);
+            else if (fightMode === "zombie") addMoney(100);
+            else if (fightMode === "armytechno") {
+              addMoney(300);
+              const r = Math.random();
+              const crates = r < 0.7 ? 1 : r < 0.95 ? 2 : 3;
+              const s2 = normalizeSave(loadSave());
+              const got = [];
+              const gotIds = [];
+              for (let i = 0; i < crates; i++) {
+                const itemId = rollBossCrateLoot();
+                ensureItemInInventory(s2, itemId);
+                gotIds.push(itemId);
+                got.push(ITEMS[itemId]?.name || itemId);
+              }
+              s2.stats.bossCrates = (s2.stats.bossCrates || 0) + crates;
+              saveGame(s2);
+              updateWeaponsSlots();
+              revealBossCrateRewards?.(gotIds);
+              setStatus(`Victory! +$300 | Boss Crates opened: ${crates} → ${got.join(", ")}`);
+            }
+            else addMoney(10);
+          }
+          runForeverTaskEngine();
+          if (fightMode !== "armytechno") setStatus("Victory");
         }
-        runForeverTaskEngine();
-        setStatus("Victory");
       }
     }
 
@@ -1692,24 +2469,35 @@ function initFights() {
   }
 
   function draw() {
-    const W = world.w;
-    const H = world.h;
-    ctx.clearRect(0, 0, W, H);
+    const vw = canvas.width;
+    const vh = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, vw, vh);
 
     if (!fightStarted) {
       // Before selection: pure black + prompt
       ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, vw, vh);
       ctx.fillStyle = "rgba(234,240,255,.92)";
       ctx.font = "26px ui-sans-serif, system-ui, Segoe UI";
-      ctx.fillText("choose a enemy!", W / 2 - 108, H / 2 - 6);
+      ctx.fillText("choose a enemy!", vw / 2 - 108, vh / 2 - 6);
       ctx.fillStyle = "rgba(234,240,255,.70)";
       ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText("Click a mob in the list to start", W / 2 - 132, H / 2 + 18);
+      ctx.fillText("Click a mob in list or use Gamemodes tab", vw / 2 - 182, vh / 2 + 18);
       // show player preview only
       drawPlayer(ctx, player, animT, lastMove);
       return;
     }
+
+    const cam = getCameraOffset();
+    const camX = cam.x;
+    const camY = cam.y;
+
+    ctx.save();
+    ctx.translate(-camX, -camY);
+
+    const W = world.w;
+    const H = world.h;
 
     if (terrainType === "paintball") {
       ctx.fillStyle = "#14091c";
@@ -1743,6 +2531,44 @@ function initFights() {
         ctx.beginPath();
         ctx.arc(b.x + b.w * 0.67, b.y + b.h * 0.58, Math.min(b.w, b.h) * 0.11, 0, Math.PI * 2);
         ctx.fill();
+      }
+    } else if (terrainType === "apocalypse" || terrainType === "military") {
+      ctx.fillStyle = "#0a0608";
+      ctx.fillRect(0, 0, W, H);
+      for (let y = 0; y < H; y += 14) {
+        for (let x = 0; x < W; x += 14) {
+          const n = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+          const t = (n % 100) / 100;
+          const g = 12 + Math.floor(t * 14);
+          ctx.fillStyle = `rgb(${g + 8},${g + 4},${g + 6})`;
+          ctx.fillRect(x, y, 14, 14);
+        }
+      }
+      const drawSlideBox = (s) => {
+        ctx.fillStyle = "rgba(124,92,255,.18)";
+        ctx.fillRect(s.x - 8, s.y - 8, s.w + 16, s.h + 16);
+        ctx.fillStyle = "#1A2350";
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.strokeStyle = "rgba(37,228,255,.45)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(s.x + 1.5, s.y + 1.5, s.w - 3, s.h - 3);
+        ctx.fillStyle = "rgba(37,228,255,.15)";
+        for (let i = 0; i < 6; i++) {
+          ctx.fillRect(s.x + 18 + i * 38, s.y + 16, 10, s.h - 32);
+        }
+        ctx.fillStyle = "rgba(234,240,255,.55)";
+        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText("SLIDE", s.x + 12, s.y + 18);
+      };
+      for (const s of world.slides) drawSlideBox(s);
+      if (terrainType === "military") {
+        for (const b of militaryObstacles) {
+          ctx.fillStyle = "#324433";
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+          ctx.strokeStyle = "rgba(190,230,170,.35)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+        }
       }
     } else {
       // playground ground
@@ -1805,8 +2631,10 @@ function initFights() {
     drawPlayer(ctx, player, animT, lastMove);
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
-      if (d0.kind === "techno") drawTechnoDog(ctx, d0, animT);
+      if (d0.kind === "techno" || d0.kind === "armyTechno") drawTechnoDog(ctx, d0, animT);
       else if (d0.kind === "skeleton") drawSkeleton(ctx, d0, animT);
+      else if (d0.kind === "zombie") drawZombie(ctx, d0, animT);
+      else if (d0.kind === "zombieDog") drawZombieDog(ctx, d0, animT);
       else drawRogueDog(ctx, d0, animT);
     }
 
@@ -1829,16 +2657,95 @@ function initFights() {
       ctx.restore();
     }
 
+    for (const r0 of rockets) {
+      ctx.fillStyle = "rgba(255,120,80,.95)";
+      ctx.beginPath();
+      ctx.arc(r0.x, r0.y, r0.r + 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,220,180,.95)";
+      ctx.beginPath();
+      ctx.arc(r0.x, r0.y, r0.r - 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (player.laserFxMs > 0 && player.laserFxFrom && player.laserFxTo) {
+      const t = player.laserFxMs / 180;
+      ctx.strokeStyle = `rgba(255,70,70,${(0.85 * t).toFixed(3)})`;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y);
+      ctx.lineTo(player.laserFxTo.x, player.laserFxTo.y);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,170,170,${(0.9 * t).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y);
+      ctx.lineTo(player.laserFxTo.x, player.laserFxTo.y);
+      ctx.stroke();
+    }
+
+    if (phantomUniversalBlastMs > 0) {
+      const cx = phantomUniversalBlastX;
+      const cy = phantomUniversalBlastY;
+      const t = phantomUniversalBlastMs / 780;
+      const r = (1 - t) * PHANTOM_BLAST_RADIUS * 1.15;
+      ctx.fillStyle = `rgba(255,80,255,${(0.24 * t).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(220,140,255,${(0.6 * t).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(18, r - 14), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    for (const b of phantomBullets) {
+      ctx.fillStyle = "rgba(255,100,220,.9)";
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (fightStarted && player.usingPhantomSniper) {
+      const aimOn = !!getDogUnderWorldPos(phantomAimX, phantomAimY);
+      ctx.strokeStyle = aimOn ? "rgba(255,120,220,.95)" : "rgba(210,210,230,.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(phantomAimX, phantomAimY, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(phantomAimX - 18, phantomAimY);
+      ctx.lineTo(phantomAimX - 6, phantomAimY);
+      ctx.moveTo(phantomAimX + 6, phantomAimY);
+      ctx.lineTo(phantomAimX + 18, phantomAimY);
+      ctx.moveTo(phantomAimX, phantomAimY - 18);
+      ctx.lineTo(phantomAimX, phantomAimY - 6);
+      ctx.moveTo(phantomAimX, phantomAimY + 6);
+      ctx.lineTo(phantomAimX, phantomAimY + 18);
+      ctx.stroke();
+      ctx.fillStyle = aimOn ? "rgba(255,130,240,.95)" : "rgba(240,240,255,.9)";
+      ctx.beginPath();
+      ctx.arc(phantomAimX, phantomAimY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+
     if (gameOver) {
       ctx.fillStyle = "rgba(0,0,0,.45)";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, vw, vh);
       ctx.fillStyle = "rgba(234,240,255,.95)";
       ctx.font = "24px ui-sans-serif, system-ui, Segoe UI";
       const text = player.hp <= 0 ? "DEFEATED" : "VICTORY";
-      ctx.fillText(text, W / 2 - 62, H / 2 - 10);
+      ctx.fillText(text, vw / 2 - 62, vh / 2 - 10);
       ctx.fillStyle = "rgba(234,240,255,.75)";
       ctx.font = "14px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText("Press R to reset", W / 2 - 72, H / 2 + 18);
+      ctx.fillText("Press R to reset", vw / 2 - 72, vh / 2 + 18);
     }
   }
 
@@ -1900,8 +2807,14 @@ function initFights() {
     // draw pixels
     for (let y = 0; y < sh; y++) {
       for (let x = 0; x < sw; x++) {
-        const c = sprite.p[y * sw + x];
+        let c = sprite.p[y * sw + x];
         if (!c) continue;
+        if (isArmy) {
+          if (c === "#23B8C2") c = "#5F8B49";
+          else if (c === "#4CE0E7") c = "#7EAB63";
+          else if (c === "#168E9E") c = "#3E6030";
+          else if (c === "#0D3C49") c = "#233427";
+        }
         g.fillStyle = c;
         g.fillRect(dx + x * scale, dy + y * scale, scale, scale);
       }
@@ -1916,7 +2829,8 @@ function initFights() {
   }
 
   function drawTechnoDog(g, d0, t) {
-    const scale = 8;
+    const isArmy = d0.kind === "armyTechno";
+    const scale = isArmy ? 12 : 8;
     const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
     const frame = moving ? (((t * 10) | 0) % 2) : 0;
     const sprite = getTechnoDogSprite(frame);
@@ -1944,20 +2858,18 @@ function initFights() {
       const uy = d0.laserDir.y;
       let x2 = d0.x + ux * d0.laserLen;
       let y2 = d0.y + uy * d0.laserLen;
-      if (terrainType === "playground" && !slideDestroyed) {
-        const hit = segmentClipAabbT(d0.x, d0.y - 2, x2, y2, world.slide);
-        if (hit && hit.tEnter >= 0) {
-          x2 = d0.x + (x2 - d0.x) * hit.tEnter;
-          y2 = (d0.y - 2) + (y2 - (d0.y - 2)) * hit.tEnter;
-        }
+      if ((terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") && !slideDestroyed) {
+        const end = clipLaserToSlides(d0.x, d0.y - 2, x2, y2);
+        x2 = end.x;
+        y2 = end.y;
       }
-      g.strokeStyle = "rgba(255,70,70,.85)";
+      g.strokeStyle = d0.laserColor === "purple" ? "rgba(170,90,255,.9)" : "rgba(255,70,70,.85)";
       g.lineWidth = 14;
       g.beginPath();
       g.moveTo(d0.x, d0.y - 2);
       g.lineTo(x2, y2);
       g.stroke();
-      g.strokeStyle = "rgba(255,180,180,.95)";
+      g.strokeStyle = d0.laserColor === "purple" ? "rgba(218,170,255,.95)" : "rgba(255,180,180,.95)";
       g.lineWidth = 6;
       g.beginPath();
       g.moveTo(d0.x, d0.y - 2);
@@ -1965,7 +2877,7 @@ function initFights() {
       g.stroke();
     }
 
-    g.strokeStyle = "rgba(37,228,255,.38)";
+    g.strokeStyle = isArmy ? "rgba(130,210,120,.4)" : "rgba(37,228,255,.38)";
     g.lineWidth = 2;
     g.beginPath();
     g.arc(d0.x, d0.y, d0.r + 9, 0, Math.PI * 2);
@@ -1997,6 +2909,62 @@ function initFights() {
     }
 
     g.strokeStyle = "rgba(180,200,255,.4)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(d0.x, d0.y, d0.r + 8, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  function drawZombieDog(g, d0, t) {
+    const scale = 4;
+    const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
+    const frame = moving ? (((t * 12) | 0) % 2) : 0;
+    const sprite = getZombieDogSprite(frame);
+    const sw = sprite.w;
+    const sh = sprite.h;
+    const dx = Math.round(d0.x - (sw * scale) / 2);
+    const dy = Math.round(d0.y - (sh * scale) / 2);
+    g.fillStyle = "rgba(0,0,0,.25)";
+    g.beginPath();
+    g.ellipse(d0.x, d0.y + 14, 20, 8, 0, 0, Math.PI * 2);
+    g.fill();
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const c = sprite.p[y * sw + x];
+        if (!c) continue;
+        g.fillStyle = c;
+        g.fillRect(dx + x * scale, dy + y * scale, scale, scale);
+      }
+    }
+    g.strokeStyle = "rgba(80,220,120,.4)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(d0.x, d0.y, d0.r + 8, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  function drawZombie(g, d0, t) {
+    const scale = 4;
+    const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
+    const frame = moving ? (((t * 8) | 0) % 2) : 0;
+    const sprite = getZombieSprite(frame);
+    const sw = sprite.w;
+    const sh = sprite.h;
+    const dx = Math.round(d0.x - (sw * scale) / 2);
+    const dy = Math.round(d0.y - (sh * scale) / 2);
+    g.fillStyle = "rgba(0,0,0,.24)";
+    g.beginPath();
+    g.ellipse(d0.x, d0.y + 18, 18, 8, 0, 0, Math.PI * 2);
+    g.fill();
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const c = sprite.p[y * sw + x];
+        if (!c) continue;
+        g.fillStyle = c;
+        g.fillRect(dx + x * scale, dy + y * scale, scale, scale);
+      }
+    }
+    g.strokeStyle = "rgba(100,255,140,.38)";
     g.lineWidth = 2;
     g.beginPath();
     g.arc(d0.x, d0.y, d0.r + 8, 0, Math.PI * 2);
@@ -2127,6 +3095,63 @@ function initFights() {
     set(2, 7, nose);
     set(2, 8, nose);
 
+    return { w, h, p };
+  }
+
+  function getZombieDogSprite(frame) {
+    const base = getDogSprite(frame);
+    const tint = (c) => {
+      if (!c) return c;
+      const m = {
+        "#0B1230": "#0d2818",
+        "#C9D2DE": "#8ecf9a",
+        "#AEB8C7": "#6ab87c",
+        "#8D98A9": "#4a9660",
+        "#6F7A8D": "#3d7a50",
+        // keep #FF6060 / #F04E6B red eyes like rogue dog
+        "#0B0B10": "#1a3020",
+        "#EAF0FF": "#c8ffd4",
+        "#2A2A36": "#1a4028",
+      };
+      return m[c] || c;
+    };
+    return { w: base.w, h: base.h, p: base.p.map(tint) };
+  }
+
+  function getZombieSprite(frame) {
+    const T = null;
+    const o = "#0a1810";
+    const skin = "#6cb87a";
+    const skin2 = "#4a9660";
+    const skinHi = "#8ed9a0";
+    const shirt = "#2d4a38";
+    const eye = "#c8ff70";
+    const w = 18;
+    const h = 24;
+    const p = new Array(w * h).fill(T);
+    const set = (x, y, c) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return;
+      p[y * w + x] = c;
+    };
+    const fill = (x0, y0, x1, y1, c) => {
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c);
+    };
+    fill(6, 2, 13, 9, o);
+    fill(7, 3, 12, 8, skin);
+    set(8, 5, eye);
+    set(11, 5, eye);
+    fill(8, 7, 11, 7, o);
+    fill(7, 10, 12, 18, o);
+    fill(8, 11, 11, 17, shirt);
+    set(9, 13, skinHi);
+    fill(6, 19, 8, 23, o);
+    fill(10, 19, 12, 23, o);
+    fill(7, 20, 7, 22, skin2);
+    fill(11, 20, 11, 22, skin2);
+    if (frame === 1) {
+      set(7, 23, skin);
+      set(11, 23, o);
+    }
     return { w, h, p };
   }
 
@@ -2412,22 +3437,93 @@ function initFights() {
   const startFight = (mode) => {
     fightStarted = true;
     arrows = [];
-    if (mode === "skeleton") {
+    phantomBullets = [];
+    const vw = canvas.width;
+    const vh = canvas.height;
+
+    if (mode === "apocalypse") {
+      fightMode = "apocalypse";
+      terrainType = "apocalypse";
+      world.w = vw * 2;
+      world.h = vh * 2;
+      const sw = 260;
+      const sh = 180;
+      world.slides = [
+        { x: 90, y: 80, w: sw, h: sh },
+        { x: world.w - 100 - sw, y: 90, w: sw, h: sh },
+        { x: 110, y: world.h - 100 - sh, w: sw, h: sh },
+        { x: world.w - 90 - sw, y: world.h - 95 - sh, w: sw, h: sh },
+      ];
+      world.slide = world.slides[0];
+      paintballObstacles = [];
+      militaryObstacles = [];
+      slideDestroyed = false;
+      apocWave = 1;
+      spawnApocalypseWave();
+      if (enemyLabel) enemyLabel.textContent = `Apocalypse · Wave ${apocWave}`;
+    } else if (mode === "armytechno") {
+      if (!ENABLE_ARMY_TECHNO_BOSS) {
+        setStatus("Army Techno Dog is temporarily unavailable.");
+        fightStarted = false;
+        return;
+      }
+      fightMode = "armytechno";
+      terrainType = "military";
+      world.w = vw * 2;
+      world.h = vh * 2;
+      const sw = 260;
+      const sh = 180;
+      world.slides = [
+        { x: 90, y: 80, w: sw, h: sh },
+        { x: world.w - 100 - sw, y: 90, w: sw, h: sh },
+        { x: 110, y: world.h - 100 - sh, w: sw, h: sh },
+        { x: world.w - 90 - sw, y: world.h - 95 - sh, w: sw, h: sh },
+      ];
+      world.slide = world.slides[0];
+      paintballObstacles = [];
+      militaryObstacles = buildMilitaryTrainingObstacles(world.w, world.h);
+      slideDestroyed = false;
+      dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
+      if (enemyLabel) enemyLabel.textContent = "Army Techno Dog";
+    } else if (mode === "skeleton") {
       fightMode = "skeleton";
       terrainType = "paintball";
+      world.w = vw;
+      world.h = vh;
+      world.slides = [];
+      world.slide = { x: world.w / 2 - 130, y: world.h / 2 - 90, w: 260, h: 180 };
       paintballObstacles = buildPaintballObstacles(world.w, world.h);
+      militaryObstacles = [];
       slideDestroyed = true;
       dogs = [makeSkeleton(world.w * 0.78, world.h * 0.42)];
       if (enemyLabel) enemyLabel.textContent = "Skeleton";
+    } else if (mode === "zombie") {
+      fightMode = "zombie";
+      terrainType = "playground";
+      world.w = vw;
+      world.h = vh;
+      world.slides = [];
+      world.slide = { x: world.w / 2 - 130, y: world.h / 2 - 90, w: 260, h: 180 };
+      paintballObstacles = [];
+      militaryObstacles = [];
+      slideDestroyed = false;
+      dogs = [makeZombie(world.w * 0.72, world.h * 0.42)];
+      if (enemyLabel) enemyLabel.textContent = "Zombie";
     } else {
       terrainType = "playground";
+      world.w = vw;
+      world.h = vh;
+      world.slides = [];
+      world.slide = { x: world.w / 2 - 130, y: world.h / 2 - 90, w: 260, h: 180 };
       paintballObstacles = [];
+      militaryObstacles = [];
       fightMode = mode === "horde" ? "horde" : mode === "techno" ? "techno" : "single";
+      slideDestroyed = false;
       if (mode === "horde") {
         dogs = [
-          makeDog(world.w * 0.72, world.h * 0.40),
-          makeDog(world.w * 0.80, world.h * 0.52),
-          makeDog(world.w * 0.70, world.h * 0.58),
+          makeDog(world.w * 0.72, world.h * 0.4),
+          makeDog(world.w * 0.8, world.h * 0.52),
+          makeDog(world.w * 0.7, world.h * 0.58),
         ];
         if (enemyLabel) enemyLabel.textContent = "Dog Horde!!!";
       } else if (mode === "techno") {
@@ -2441,15 +3537,23 @@ function initFights() {
     reset();
     setUi();
     setStatus(
-      mode === "skeleton"
-        ? "Fight started: Skeleton (Paintball Arena)"
-        : mode === "horde"
-          ? "Fight started: Dog Horde!!!"
-          : mode === "techno"
-            ? "Fight started: Techno Super Dog"
-            : "Fight started: Rogue Dog",
+      mode === "apocalypse"
+        ? `Apocalypse · Wave ${apocWave} · clear waves for $ + magicoin`
+        : mode === "armytechno"
+          ? "Boss fight started: Army Techno Dog (Military Training Base)"
+        : mode === "skeleton"
+          ? "Fight started: Skeleton (Paintball Arena)"
+          : mode === "zombie"
+            ? "Fight started: Zombie"
+            : mode === "horde"
+              ? "Fight started: Dog Horde!!!"
+              : mode === "techno"
+                ? "Fight started: Techno Super Dog"
+                : "Fight started: Rogue Dog",
     );
   };
+
+  window.gameStartFight = startFight;
 
   if (mobBtnDog) {
     mobBtnDog.addEventListener("click", () => startFight("single"));
@@ -2462,6 +3566,9 @@ function initFights() {
   }
   if (mobBtnSkeleton) {
     mobBtnSkeleton.addEventListener("click", () => startFight("skeleton"));
+  }
+  if (mobBtnZombie) {
+    mobBtnZombie.addEventListener("click", () => startFight("zombie"));
   }
 
   fightStarted = false;
@@ -2499,7 +3606,6 @@ function initFights() {
 
 function initShop() {
   const moneyText = $("#moneyText");
-  const buySet = $("#buyReleasiteSet");
   const openLootCrate = $("#openLootCrate");
   const limitedSection = $("#limitedLootSection");
   const openLimitedCrate = $("#openLimitedReleaseCrate");
@@ -2510,12 +3616,13 @@ function initShop() {
   const redeemCancel = $("#redeemCancelBtn");
   const redeemHelp = $("#redeemHelp");
   const resetSaveBtn = $("#resetSaveBtn");
-  const ownedReleasite = $("#ownedReleasite");
   const lootCrateResult = $("#lootCrateResult");
   const openUndeadCrate = $("#openUndeadCrate");
   const undeadCrateResult = $("#undeadCrateResult");
   const buyBowSpecial = $("#buyBowSpecial");
   const bowSpecialNote = $("#bowSpecialNote");
+  const buyPhantomSniper = $("#buyPhantomSniper");
+  const phantomSniperNote = $("#phantomSniperNote");
   const lootModal = $("#lootModal");
   const lootCanvas = $("#lootCanvas");
   const lootText = $("#lootText");
@@ -2523,55 +3630,63 @@ function initShop() {
 
   if (!moneyText) return;
 
-  let game = loadSave();
+  let game = normalizeSave(loadSave());
+
+  const magicoinShop = $("#magicoinText");
 
   const refresh = () => {
+    game = normalizeSave(loadSave());
     moneyText.textContent = `$${game.money}`;
-    const owned = !!game.armor?.ownedSet;
-    if (ownedReleasite) ownedReleasite.textContent = owned ? "Owned (equip in Fights)" : "";
-    if (buySet) buySet.disabled = owned || game.money < 300;
+    if (magicoinShop) magicoinShop.textContent = `${game.magicoin ?? 0} magicoin`;
     if (openUndeadCrate) openUndeadCrate.disabled = game.money < 500;
-    if (buyBowSpecial) buyBowSpecial.disabled = game.money < 2500;
+    if (buyBowSpecial) buyBowSpecial.disabled = game.money < 4000;
+    if (buyPhantomSniper) buyPhantomSniper.disabled = game.money < 10000 || (game.magicoin ?? 0) < 10;
     if (bowSpecialNote) {
       const n = Number(game.inventory?.counts?.bone_bow ?? 0);
       bowSpecialNote.textContent = n > 0 ? `You own: ${n}× Bow (equip in Weapons)` : "";
     }
+    if (phantomSniperNote) {
+      const n = Number(game.inventory?.counts?.phantom_sniper ?? 0);
+      phantomSniperNote.textContent = n > 0 ? `You own: ${n}× (equip in Weapons)` : "";
+    }
     if (limitedSection) limitedSection.style.display = LIMITED_RELEASE_CRATE_ENABLED ? "" : "none";
   };
-
-  const commit = () => {
-    saveGame(game);
-    refresh();
-  };
-
-  if (buySet) {
-    buySet.addEventListener("click", () => {
-      game = loadSave();
-      if (game.money < 300) return refresh();
-      if (!game.armor) game.armor = { ownedSet: false, equipped: { helmet: false, chest: false, legs: false, boots: false } };
-      if (game.armor.ownedSet) return refresh();
-      game.money -= 300;
-      game.armor.ownedSet = true;
-      // keep equipped false by default
-      commit();
-      setStatus("Bought: Full set of Releasite armor!!!");
-      updateWeaponsSlots();
-    });
-  }
 
   if (buyBowSpecial) {
     buyBowSpecial.addEventListener("click", () => {
       game = normalizeSave(loadSave());
-      if (game.money < 2500) {
-        setStatus("Not enough money for Bow (special)");
+      if (game.money < 4000) {
+        setStatus("Not enough money for Bow (4000$)");
         return refresh();
       }
-      game.money -= 2500;
+      game.money -= 4000;
       ensureItemInInventory(game, "bone_bow");
       saveGame(game);
       refresh();
       updateWeaponsSlots();
-      setStatus("Bought: Bow (special deal — 2500$)");
+      setStatus("Bought: Bow — 4000$");
+      runForeverTaskEngine();
+    });
+  }
+
+  if (buyPhantomSniper) {
+    buyPhantomSniper.addEventListener("click", () => {
+      game = normalizeSave(loadSave());
+      if (game.money < 10000) {
+        setStatus("Not enough money for Phantom Sniper (10,000$)");
+        return refresh();
+      }
+      if ((game.magicoin ?? 0) < 10) {
+        setStatus("Not enough magicoin (need 10)");
+        return refresh();
+      }
+      game.money -= 10000;
+      game.magicoin -= 10;
+      ensureItemInInventory(game, "phantom_sniper");
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+      setStatus("Bought: Phantom Sniper");
       runForeverTaskEngine();
     });
   }
@@ -2650,6 +3765,35 @@ function initShop() {
     requestAnimationFrame(anim);
   };
 
+  revealBossCrateRewards = (itemIds) => {
+    if (!Array.isArray(itemIds) || !itemIds.length) return;
+    const names = itemIds.map((id) => ITEMS[id]?.name || id);
+    if (lootCrateResult) lootCrateResult.textContent = `Boss crate rewards: ${names.join(", ")}`;
+    let i = 0;
+    const playOne = () => {
+      const itemId = itemIds[i];
+      const it = itemId ? ITEMS[itemId] : null;
+      const detail = it ? getItemDetailText(it) : "";
+      showLootModal(
+        `Boss crate ${i + 1}/${itemIds.length}: ${it?.name || itemId}`,
+        (ctx, W, H) => {
+          ctx.fillStyle = "rgba(255,190,80,.10)";
+          ctx.fillRect(0, 0, W, H);
+          if (itemId && ITEMS[itemId]) drawItemTexture(itemId, ctx, W, H);
+          ctx.fillStyle = "rgba(234,240,255,.90)";
+          ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+          ctx.fillText(detail || "Boss crate reward", 12, H - 14);
+        },
+        "basic",
+      );
+      i += 1;
+      if (i < itemIds.length) {
+        setTimeout(playOne, 750);
+      }
+    };
+    playOne();
+  };
+
   const hideLootModal = () => {
     if (!lootModal) return;
     lootModal.classList.add("is-hidden");
@@ -2688,7 +3832,13 @@ function initShop() {
     const code = redeemInput ? redeemInput.value : "";
     const res = redeemLimitedReleaseCrate(code);
     if (!res.ok) {
-      if (redeemHelp) redeemHelp.textContent = res.reason === "used" ? "That code was already used." : "Incorrect code.";
+      if (redeemHelp)
+        redeemHelp.textContent =
+          res.reason === "disabled"
+            ? "Limited Release crate is currently disabled."
+            : res.reason === "used"
+              ? "That code was already used."
+              : "Incorrect code.";
       setStatus("Redeem failed");
       return;
     }
@@ -2767,6 +3917,26 @@ function initShop() {
         for (let y = 5; y <= 10; y++) px(8, y, acc), px(9, y, acc);
         px(7, 7, acc);
         px(10, 8, acc);
+        return;
+      }
+      if (itemId === "phantom_sniper") {
+        const c = "#2a2038";
+        const a = "#c8a0ff";
+        for (let i = 0; i < 24; i++) {
+          const t = (i / 24) * Math.PI * 2;
+          const x = 10 + Math.cos(t) * 6.5;
+          const y = 8 + Math.sin(t) * 6.5;
+          px(x | 0, y | 0, i % 3 === 0 ? a : c);
+        }
+        px(10, 1, c);
+        px(10, 2, c);
+        px(10, 14, c);
+        px(10, 15, c);
+        px(4, 8, c);
+        px(5, 8, c);
+        px(15, 8, c);
+        px(16, 8, c);
+        px(10, 8, "#ff9cf0");
         return;
       }
       const isReleasite = itemId.startsWith("releasite_");
@@ -2880,34 +4050,6 @@ function initShop() {
       px(10, 7, bone ? boneAcc : itemId.startsWith("releasite") ? gold : leather);
       return;
     }
-  };
-
-  revealFreeReleaseCrate = (itemId) => {
-    if (!LIMITED_RELEASE_CRATE_ENABLED || !itemId || !ITEMS[itemId]) return;
-    const it = ITEMS[itemId];
-    const detail = getItemDetailText(it);
-    if (limitedCrateResult) limitedCrateResult.textContent = `Event reward (free crate): ${it.name} (${detail})`;
-    showLootModal(
-      `Event reward: ${it.name}`,
-      (ctx, W, H) => {
-        ctx.fillStyle = "rgba(241,208,122,.10)";
-        ctx.fillRect(0, 0, W, H);
-        for (let i = 0; i < 10; i++) {
-          const x = (Math.random() * W) | 0;
-          const y = (Math.random() * H) | 0;
-          ctx.fillStyle = "rgba(241,208,122,.55)";
-          ctx.fillRect(x, y, 1, 1);
-        }
-        drawItemTexture(itemId, ctx, W, H);
-        ctx.fillStyle = "rgba(234,240,255,.90)";
-        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-        ctx.fillText(detail, 12, H - 14);
-      },
-      "limited",
-    );
-    setStatus(`Event task: free Limited Release Crate — ${it.name}`);
-    updateWeaponsSlots();
-    updateShopUi?.();
   };
 
   if (openLootCrate) {
@@ -3028,13 +4170,11 @@ function initForeverTasks() {
     const p = getTaskProgress(task, s.stats);
     titleEl.textContent = task.title;
     descEl.textContent =
-      task.rewardKind === "releaseCrate"
-        ? "Event: complete the wins, then Claim — your Limited Release Crate opens immediately."
-        : task.type === "abs"
-          ? "Main progression task — Claim when the bar is full."
-          : "Random forever task — Claim when complete.";
+      task.type === "abs"
+        ? "Main progression task — Claim when the bar is full."
+        : "Random forever task — Claim when complete.";
     progEl.textContent = p.done ? `${p.text} (Complete!)` : p.text;
-    rewardEl.textContent = task.rewardKind === "releaseCrate" ? "Reward: 1× Release Crate" : `$${task.reward}`;
+    rewardEl.textContent = `$${task.reward}`;
     stageEl.textContent = s.forever.stage < FIRST_TASKS.length ? `Stage: ${s.forever.stage + 1} / ${FIRST_TASKS.length}` : "Stage: Forever Random";
     if (claimBtn) claimBtn.disabled = !s.forever.readyToClaim;
   };
@@ -3045,12 +4185,77 @@ function initForeverTasks() {
   updateForeverUi();
 }
 
+function initProgressBugCompensation() {
+  const modal = $("#progressBugModal");
+  const claimBtn = $("#progressBugClaimBtn");
+  if (!modal || !claimBtn) return;
+
+  const hide = () => {
+    modal.classList.add("is-hidden");
+    modal.setAttribute("aria-hidden", "true");
+  };
+  const show = () => {
+    modal.classList.remove("is-hidden");
+    modal.setAttribute("aria-hidden", "false");
+  };
+
+  const s = normalizeSave(loadSave());
+  if (s.compensation?.progressBugClaimed) {
+    hide();
+    return;
+  }
+  show();
+
+  claimBtn.addEventListener("click", () => {
+    const cur = normalizeSave(loadSave());
+    if (cur.compensation?.progressBugClaimed) {
+      hide();
+      return;
+    }
+    cur.money = (cur.money || 0) + 6000;
+    cur.magicoin = (cur.magicoin || 0) + 7;
+    ensureItemInInventory(cur, "bone_bow");
+    cur.armor = cur.armor ?? { ownedSet: false, equipped: { helmet: false, chest: false, legs: false, boots: false } };
+    cur.armor.ownedSet = true;
+    cur.compensation.progressBugClaimed = true;
+    saveGame(cur);
+    updateShopUi?.();
+    updateWeaponsSlots();
+    runForeverTaskEngine();
+    setStatus("Compensation claimed");
+    hide();
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initRobot();
   initFights();
+  const apocalypseBtn = $("#startApocalypseBtn");
+  const armyTechnoBtn = $("#startArmyTechnoBtn");
+  if (apocalypseBtn && window.gameStartFight) {
+    apocalypseBtn.addEventListener("click", () => {
+      const fightTab = document.querySelector('.tab[data-panel="fights"]');
+      if (fightTab) fightTab.click();
+      window.gameStartFight("apocalypse");
+    });
+  }
+  if (armyTechnoBtn && window.gameStartFight) {
+    const bossCard = armyTechnoBtn.closest(".shopCard");
+    if (!ENABLE_ARMY_TECHNO_BOSS && bossCard) bossCard.style.display = "none";
+    armyTechnoBtn.addEventListener("click", () => {
+      if (!ENABLE_ARMY_TECHNO_BOSS) {
+        setStatus("Army Techno Dog is temporarily unavailable.");
+        return;
+      }
+      const fightTab = document.querySelector('.tab[data-panel="fights"]');
+      if (fightTab) fightTab.click();
+      window.gameStartFight("armytechno");
+    });
+  }
   initShop();
   initForeverTasks();
   updateWeaponsSlots();
+  initProgressBugCompensation();
   setStatus("Ready");
 });

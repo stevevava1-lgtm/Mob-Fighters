@@ -18,6 +18,7 @@
           <button class="tab" data-panel="weapons" type="button">Weapons</button>
           <button class="tab" data-panel="shop" type="button">Shop</button>
           <button class="tab" data-panel="forever" type="button">Forever Tasks</button>
+          <button class="tab" data-panel="gamemodes" type="button">Gamemodes</button>
         </nav>
       </header>
 
@@ -45,7 +46,11 @@
               </button>
               <button class="mobBtn" id="mob-skeleton" type="button">
                 <span class="mobBtn__name">Skeleton</span>
-                <span class="mobBtn__meta">70 HP · Paintball Arena</span>
+                <span class="mobBtn__meta">70 HP </span>
+              </button>
+              <button class="mobBtn" id="mob-zombie" type="button">
+                <span class="mobBtn__name">Zombie</span>
+                <span class="mobBtn__meta">140 HP </span>
               </button>
               <div class="mobList__note">More mobs: coming later</div>
             </aside>
@@ -87,6 +92,33 @@
                 <div class="arenaFooter__right">Not released: weapons</div>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-gamemodes" data-panel="gamemodes" aria-label="Gamemodes">
+          <div class="panel__header">
+            <h2 class="panel__title">Gamemodes</h2>
+            <p class="panel__hint">Choose a special mode or boss encounter.</p>
+          </div>
+
+          <div class="shopLayout">
+            <div class="shopCard" style="max-width: 520px">
+              <div class="shopCard__title">Apocalypse</div>
+              <p class="shopNote">
+                Endless waves on a 2× open map (four slides). You start with 1000 HP; armor HP bonuses are ×10 here. Wave 1 spawns 3 random mobs, then
+                +1 each wave. Rewards: $300 + $200 per wave; wave 5+ gives magicoin.
+              </p>
+              <button class="buyBtn" id="startApocalypseBtn" type="button">Enter Apocalypse</button>
+            </div>
+
+            <div class="shopCard" style="max-width: 520px">
+              <div class="shopCard__title">Bosses</div>
+              <p class="shopNote">
+                Army Techno Dog (500 HP): Bite, Super Laser (purple), and Rapid Gattling Shot. Arena: Military Training Base (large map + extra center
+                obstacles). Rewards: $300 and 1~3 Boss Crates.
+              </p>
+              <button class="buyBtn" id="startArmyTechnoBtn" type="button">Fight Army Techno Dog</button>
+            </div>
           </div>
         </section>
 
@@ -152,23 +184,20 @@
               <div class="shopCard__title">Balance</div>
               <div class="moneyRow">
                 <div class="moneyPill" id="moneyText">$0</div>
+                <div class="moneyPill" id="magicoinText">0 magicoin</div>
                 <button class="softBtn" id="resetSaveBtn" type="button" title="Reset save">Reset Save</button>
               </div>
-              <div class="shopNote">Rogue Dog victory gives +10$. Dog Horde victory gives +50$.</div>
+              <div class="shopNote">Each mob gives a different amount of money. Magicoin is earned in Apocalypse (wave 5+).</div>
             </div>
 
             <div class="shopGrid" aria-label="Shop items">
-              <div class="shopItem shopItem--specialDeal">
-                <div class="shopItem__ribbon" aria-hidden="true">Special deal</div>
+              <div class="shopItem">
                 <div class="shopItem__top">
                   <div class="shopItem__name">Bow</div>
-                  <div class="shopItem__priceRow" aria-label="Price">
-                    <span class="shopItem__priceWas">4000$</span>
-                    <span class="shopItem__priceNow">2500$</span>
-                  </div>
+                  <div class="shopItem__price">4000$</div>
                 </div>
                 <div class="shopItem__desc">
-                  Auto-aim arrows, 10 damage per shot. Same item as from the Undead crate — on sale while this deal is up.
+                  Auto-aim arrows, 10 damage per shot. Same item as from the Undead crate.
                 </div>
                 <button class="buyBtn" id="buyBowSpecial" type="button">Buy Bow</button>
                 <div class="shopItem__owned" id="bowSpecialNote"></div>
@@ -176,15 +205,14 @@
 
               <div class="shopItem">
                 <div class="shopItem__top">
-                  <div class="shopItem__name">Full set of Releasite armor!!!(Will Be Removed Soon)</div>
-                  <div class="shopItem__price">300$</div>
+                  <div class="shopItem__name">Phantom Sniper</div>
+                  <div class="shopItem__price">10,000$ + 10 magicoin</div>
                 </div>
                 <div class="shopItem__desc">
-                  Yellowish-gold armor set (4 pieces). Equip in fights:
-                  Helmet +5 HP, Chestplate +10 HP, Leggings +7 HP, Boots +4 HP.
+                  Scope cursor: long-press on an enemy to fire a 70-damage round. If it hits a slide, a blast damages everyone (you and all mobs).
                 </div>
-                <button class="buyBtn" id="buyReleasiteSet" type="button">Buy</button>
-                <div class="shopItem__owned" id="ownedReleasite"></div>
+                <button class="buyBtn" id="buyPhantomSniper" type="button">Buy</button>
+                <div class="shopItem__owned" id="phantomSniperNote"></div>
               </div>
 
               <div class="shopItem">
@@ -248,6 +276,23 @@
             <div class="modal__actions">
               <button class="buyBtn" id="redeemSubmitBtn" type="button">Redeem</button>
               <button class="softBtn" id="redeemCancelBtn" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal is-hidden" id="progressBugModal" aria-hidden="true">
+          <div class="modal__backdrop"></div>
+          <div class="modal__card" role="dialog" aria-label="Progress compensation">
+            <div class="modal__title">Compensation Notice</div>
+            <div class="modal__text">
+              Sorry, we accidentally removed progress because of a bug.
+              <br />
+              Click Claim to receive: 6000$, 7 magicoin, 1 Bow, and full Releasite set.
+              <br />
+              This is temporary and can only be claimed once. ONCE, ONE And Only Offer, by Steve, NOT CURSOR.
+            </div>
+            <div class="modal__actions">
+              <button class="buyBtn" id="progressBugClaimBtn" type="button">Claim</button>
             </div>
           </div>
         </div>
