@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Boss Fighting (Prototype)</title>
+    <title>Boss Fighting (Beta)</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -11,7 +11,7 @@
       <header class="topbar">
         <div class="brand">
           <div class="brand__title">Boss Fighting</div>
-          <div class="brand__sub">Prototype UI</div>
+          <div class="brand__sub">Beta UI</div>
         </div>
         <nav class="tabs" aria-label="Main panels">
           <button class="tab is-active" data-panel="fights" type="button">Fights</button>
@@ -19,6 +19,7 @@
           <button class="tab" data-panel="shop" type="button">Shop</button>
           <button class="tab" data-panel="forever" type="button">Forever Tasks</button>
           <button class="tab" data-panel="gamemodes" type="button">Gamemodes</button>
+          <button class="tab" data-panel="mods" type="button">Mods</button>
         </nav>
       </header>
 
@@ -114,10 +115,48 @@
             <div class="shopCard" style="max-width: 520px">
               <div class="shopCard__title">Bosses</div>
               <p class="shopNote">
-                Boss Update (500 HP): Bite, Super Laser (purple), and Rapid Gattling Shot. Arena: Military Training Base (large map + extra center
+                Army Techno Dog (500 HP): Bite, Super Laser (purple), and Rapid Gattling Shot. Arena: Military Training Base (large map + extra center
                 obstacles). Rewards: $300 and 1~3 Boss Crates.
               </p>
-              <button class="buyBtn" id="startArmyTechnoBtn" type="button">Fight Boss Update</button>
+              <button class="buyBtn" id="startArmyTechnoBtn" type="button">Fight Army Techno Dog</button>
+              <p class="shopNote" style="margin-top: 10px">
+                Titan Zombie (700 HP): giant summoner + charge smash quakes. Arena: Military Training Base. Rewards: 2~4 Boss Crates.
+              </p>
+              <button class="buyBtn" id="startTitanZombieBtn" type="button">Fight Titan Zombie</button>
+              <p class="shopNote" style="margin-top: 10px">
+                Galaxy Warrior (1000 HP): aggressive slashes + meteor volley. Arena: Military Training Base. Rewards: 1~3 Boss Crates.
+              </p>
+              <button class="buyBtn" id="startGalaxyWarriorBtn" type="button">Fight Galaxy Warrior</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-mods" data-panel="mods" aria-label="Mods">
+          <div class="panel__header">
+            <h2 class="panel__title">Mods</h2>
+            <p class="panel__hint">Mods are quick toggles; triggers are locked.</p>
+          </div>
+
+          <div class="shopLayout">
+            <div class="shopCard" style="max-width: 720px">
+              <div class="shopCard__title">Power Tool Mod</div>
+              <p class="shopNote">Shows the Power Tool Crate in Shop when enabled.</p>
+              <label class="shopNote" style="display: inline-flex; gap: 10px; align-items: center">
+                <input id="togglePowerToolMod" type="checkbox" />
+                Enabled (Power Tool Mod)
+              </label>
+              <div class="shopNote" id="modsStatusNote" style="margin-top: 10px"></div>
+            </div>
+
+            <div class="shopCard" style="max-width: 720px">
+              <div class="shopCard__title">Triggers</div>
+              <p class="shopNote">Locked. Click to unlock (password required).</p>
+              <button class="buyBtn" id="openTriggersBtn" type="button">Open Triggers</button>
+              <div id="triggersLockedNote" class="shopNote" style="margin-top: 10px"></div>
+              <div id="triggersWrap" style="display: none; margin-top: 10px">
+                <div class="shopNote">Toggle triggers here (saved in your browser).</div>
+                <div id="triggersList" class="shopNote"></div>
+              </div>
             </div>
           </div>
         </section>
@@ -238,6 +277,18 @@
                 <button class="buyBtn" id="openUndeadCrate" type="button">Buy & Open</button>
                 <div class="shopItem__owned" id="undeadCrateResult"></div>
               </div>
+
+              <div class="shopItem" id="powerToolItem" style="display: none">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Power Tool Crate</div>
+                  <div class="shopItem__price">???</div>
+                </div>
+                <div class="shopItem__desc">
+                 Mod Only Crate
+                </div>
+                <button class="buyBtn" id="openPowerToolCrate" type="button">Open</button>
+                <div class="shopItem__owned" id="powerToolCrateResult"></div>
+              </div>
             </div>
 
             <div class="shopSection" id="limitedLootSection" aria-label="Limited prizes">
@@ -335,6 +386,7 @@
       </footer>
     </div>
 
+    <script src="./triggers.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>

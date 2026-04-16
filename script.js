@@ -3,7 +3,25 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // --------- Save / Economy ----------
 const SAVE_KEY = "bossFightingSave_v1";
-const ENABLE_BOSS_UPDATE_TRIGGER = false; // master trigger for current/next boss updates
+const isTriggerOn = (id) => (typeof window.getTrigger === "function" ? window.getTrigger(id) : true);
+const MODS_KEY = "bossFightingMods_v1";
+const loadMods = () => {
+  try {
+    const raw = localStorage.getItem(MODS_KEY);
+    if (!raw) return { powerToolMod: false };
+    const parsed = JSON.parse(raw);
+    return { powerToolMod: !!parsed?.powerToolMod };
+  } catch {
+    return { powerToolMod: false };
+  }
+};
+const saveMods = (m) => {
+  try {
+    localStorage.setItem(MODS_KEY, JSON.stringify(m));
+  } catch {
+    // ignore
+  }
+};
 
 function loadSave() {
   try {
@@ -292,6 +310,61 @@ const ITEMS = {
   laser_blast: { id: "laser_blast", name: "Laser Blast", type: "weapon", dmg: 0, laserBlast: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
   gattling: { id: "gattling", name: "Gattling", type: "weapon", dmg: 0, gattling: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
   rpg: { id: "rpg", name: "RPG", type: "weapon", dmg: 0, rpg: true, rangeMult: 1.0, moveMult: 1.0, hp: 0, tint: "bossWeapon" },
+  // Power Tool crate (mod)
+  laser_blaster: {
+    id: "laser_blaster",
+    name: "Laser Blaster",
+    type: "weapon",
+    dmg: 0,
+    laserBlaster: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  chainsaw: {
+    id: "chainsaw",
+    name: "Chainsaw",
+    type: "weapon",
+    dmg: 0,
+    chainsaw: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  health_battery: {
+    id: "health_battery",
+    name: "Health Battery",
+    type: "weapon",
+    dmg: 0,
+    healthBattery: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  techno_blade: {
+    id: "techno_blade",
+    name: "Techno_blade",
+    type: "weapon",
+    dmg: 17,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  technoblade: {
+    id: "technoblade",
+    name: "Technoblade",
+    type: "weapon",
+    dmg: 20,
+    technoBlade: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
   undead_wraith_chestplate: {
     id: "undead_wraith_chestplate",
     name: "Undead Wraith Chestplate",
@@ -319,8 +392,12 @@ const ITEMS = {
 function getItemDetailText(it) {
   if (!it) return "";
   if (it.rpg) return "RPG: rocket (80 direct / 30 blast), enemies try to dodge";
-  if (it.gattling) return "Gattling: 10-shot burst, 7 dmg/shot, 3.0s cooldown";
+  if (it.gattling) return "Gattling: 10-shot burst, 7 dmg/shot, 1.0s cooldown";
   if (it.laserBlast) return "Laser Blast: red beam shot, 5 dmg, 3.0s cooldown";
+  if (it.laserBlaster) return "Laser Blaster: long-press → 4s beam (11 dmg/s), then 2s reload";
+  if (it.chainsaw) return "Chainsaw: long-press → 4s (close) (20 dmg/s), then 2s reload";
+  if (it.healthBattery) return "Health Battery: one-use, heals 20% max HP (click to use)";
+  if (it.technoBlade) return "Technoblade: +20 DMG, long-press → 1s laser beam";
   if (it.phantomSniper) return "Sniper: long-press on foe → 70 dmg round; slide hits = AoE all";
   if (it.bow) return `Bow: ${it.bowDmg} dmg/arrow (auto-aim)`;
   if (it.type === "weapon") return `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "");
@@ -371,6 +448,23 @@ function rollBossCrateLoot() {
     if (r <= 0) return row.id;
   }
   return "boss_blade";
+}
+
+function rollPowerToolLoot() {
+  const table = [
+    { id: "laser_blaster", w: 1 / 1 },
+    { id: "chainsaw", w: 1 / 2 },
+    { id: "health_battery", w: 1 / 3 },
+    { id: "techno_blade", w: 1 / 4 },
+    { id: "technoblade", w: 1 / 10 },
+  ].filter((d) => ITEMS[d.id]);
+  const total = table.reduce((a, row) => a + row.w, 0) || 1;
+  let r = Math.random() * total;
+  for (const row of table) {
+    r -= row.w;
+    if (r <= 0) return row.id;
+  }
+  return "laser_blaster";
 }
 
 function ensureItemInInventory(save, itemId) {
@@ -644,7 +738,7 @@ function claimForeverTask() {
 }
 
 // --------- Redeem / Limited Release Crate ----------
-const LIMITED_RELEASE_CRATE_ENABLED = false; // Limited Release / releasite redeem crate (off)
+const isLimitedReleaseCrateEnabled = () => isTriggerOn("LIMITED_RELEASE_CRATE_TRIGGER");
 
 const LIMITED_RELEASE_CODES = Object.freeze(["Hb03", "Lhyu", "Relese!", "z00ms4hur", "uracat", "april9th", "tester-001"]);
 
@@ -673,7 +767,7 @@ function rollLimitedReleaseLoot() {
 }
 
 function redeemLimitedReleaseCrate(codeRaw) {
-  if (!LIMITED_RELEASE_CRATE_ENABLED) return { ok: false, reason: "disabled" };
+  if (!isLimitedReleaseCrateEnabled()) return { ok: false, reason: "disabled" };
   const code = String(codeRaw ?? "");
   if (!LIMITED_RELEASE_CODES.includes(code)) return { ok: false, reason: "invalid" };
 
@@ -1083,6 +1177,10 @@ function initFights() {
     usingBow: false,
     usingPhantomSniper: false,
     usingLaserBlast: false,
+    usingLaserBlaster: false,
+    usingChainsaw: false,
+    usingHealthBattery: false,
+    usingTechnoblade: false,
     usingGattling: false,
     usingRpg: false,
     bowDmg: 0,
@@ -1094,6 +1192,12 @@ function initFights() {
     laserFxMs: 0,
     laserFxFrom: null,
     laserFxTo: null,
+    powerActiveKind: null, // "laser_blaster" | "chainsaw"
+    powerActiveLeftMs: 0,
+    powerReloadLeftMs: 0,
+    powerLockedTarget: null,
+    technoBeamLeftMs: 0,
+    technoBeamDir: { x: 1, y: 0 },
   };
 
   const makeDog = (x, y) => ({
@@ -1204,6 +1308,58 @@ function initFights() {
     rewarded: false,
     kind: "zombieDog",
   });
+  const makeTitanZombieDog = (x, y) => ({
+    ...makeZombieDog(x, y),
+    r: 32,
+    hpMax: 70,
+    hp: 70,
+    speed: 210,
+    dmg: 30,
+    kind: "titanZombieDog",
+  });
+  const makeTitanZombie = (x, y) => ({
+    ...makeZombie(x, y),
+    r: 55,
+    hpMax: 700,
+    hp: 700,
+    speed: 140,
+    dmg: 0,
+    kind: "titanZombie",
+    summonCdMs: 10000,
+    summonCdLeft: 2500,
+    smashCdMs: 7500,
+    smashCdLeft: 3500,
+    chargeActive: false,
+  });
+  const makeGalaxyWarrior = (x, y) => ({
+    x,
+    y,
+    r: 26, // same size as normal techno dog
+    hpMax: 1500,
+    hp: 1500,
+    speed: 385, // very fast (buffed)
+    cdMs: 1000, // slash cooldown
+    cdLeft: 0,
+    dmg: 20,
+    mode: "charge",
+    justHitRetreatMs: 0,
+    retreatLeft: 0,
+    rewarded: false,
+    kind: "galaxyWarrior",
+    meteorCdMs: 7000,
+    meteorCdLeft: 1800,
+    meteorShotsLeft: 0,
+    meteorShotCdLeft: 0,
+    pathWp: null,
+    pathRecalcMs: 0,
+    gwIsReal: true,
+    gwSplitDone: false,
+    gwPhase: "normal", // normal | run | telegraph | laser | fight
+    gwPhaseLeftMs: 0,
+    gwAim: null,
+    gwLaserDir: { x: 1, y: 0 },
+    gwSlideHitMs: {},
+  });
   let dogs = [makeDog(world.w * 0.75, world.h * 0.45)];
 
   const keys = new Set();
@@ -1214,7 +1370,7 @@ function initFights() {
   let lastMove = { x: 1, y: 0 };
   let animT = 0;
   let rewardGranted = false;
-  let fightMode = "single"; // single | horde | techno | skeleton | zombie | apocalypse | armytechno
+  let fightMode = "single"; // single | horde | techno | skeleton | zombie | apocalypse | armytechno | titanzombie | galaxywarrior
   let terrainType = "playground"; // playground | paintball | apocalypse | military
   let apocWave = 1;
   let paintballObstacles = [];
@@ -1224,6 +1380,10 @@ function initFights() {
   let rockets = [];
   let phantomLongPressStart = null;
   let phantomLockedTarget = null;
+  let laserLongPressStart = null;
+  let laserLockedTarget = null;
+  let powerLongPressStart = null;
+  let powerLockedTarget = null;
   let phantomUniversalBlastMs = 0;
   let phantomUniversalBlastX = 0;
   let phantomUniversalBlastY = 0;
@@ -1236,6 +1396,8 @@ function initFights() {
   let slideLaserMs = 0;
   let slideExplosionMs = 0;
   let activeWeaponSlot = "weapon1"; // weapon1 | weapon2
+  let titanQuakes = [];
+  let meteors = [];
 
   const getSlideBoxes = () => {
     if (terrainType === "paintball") return [];
@@ -1310,7 +1472,65 @@ function initFights() {
     const baseHp = fightMode === "apocalypse" ? 1000 : 100;
     const armorHpMult = fightMode === "apocalypse" ? 10 : 1;
 
-    if (weapon?.rpg) {
+    // reset weapon-mode flags
+    player.usingLaserBlaster = false;
+    player.usingChainsaw = false;
+    player.usingHealthBattery = false;
+    player.usingTechnoblade = false;
+
+    if (weapon?.healthBattery) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = true;
+      player.usingTechnoblade = false;
+      player.bowDmg = 0;
+      player.dmg = 0;
+      player.rangeMult = 1.0;
+    } else if (weapon?.laserBlaster) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = true;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = false;
+      player.usingTechnoblade = false;
+      player.bowDmg = 0;
+      player.dmg = 0;
+      player.rangeMult = 1.0;
+    } else if (weapon?.chainsaw) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = true;
+      player.usingHealthBattery = false;
+      player.usingTechnoblade = false;
+      player.bowDmg = 0;
+      player.dmg = 0;
+      player.rangeMult = 1.0;
+    } else if (weapon?.technoBlade) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = false;
+      player.usingTechnoblade = true;
+      player.bowDmg = 0;
+      player.dmg = weapon?.dmg ?? 20;
+      player.rangeMult = 1.0;
+    } else if (weapon?.rpg) {
       player.usingBow = false;
       player.usingPhantomSniper = false;
       player.usingLaserBlast = false;
@@ -1428,6 +1648,8 @@ function initFights() {
 
   const reset = () => {
     activeWeaponSlot = "weapon1";
+    titanQuakes = [];
+    meteors = [];
     if (fightMode === "zombie" && fightStarted) {
       dogs = [makeZombie(world.w * 0.72, world.h * 0.42)];
     } else if (fightMode === "apocalypse" && fightStarted) {
@@ -1435,6 +1657,28 @@ function initFights() {
       spawnApocalypseWave();
     } else if (fightMode === "armytechno" && fightStarted) {
       dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
+    } else if (fightMode === "titanzombie" && fightStarted) {
+      dogs = [makeTitanZombie(world.w * 0.74, world.h * 0.42)];
+    } else if (fightMode === "galaxywarrior" && fightStarted) {
+      dogs = [makeGalaxyWarrior(world.w * 0.74, world.h * 0.42)];
+    }
+
+    // Safety net: never allow a started fight to run with an empty mob list.
+    if (fightStarted && dogs.length === 0) {
+      if (fightMode === "single") dogs = [makeDog(world.w * 0.75, world.h * 0.45)];
+      else if (fightMode === "horde") {
+        dogs = [
+          makeDog(world.w * 0.72, world.h * 0.4),
+          makeDog(world.w * 0.8, world.h * 0.52),
+          makeDog(world.w * 0.7, world.h * 0.58),
+        ];
+      } else if (fightMode === "techno") dogs = [makeTechnoDog(world.w * 0.76, world.h * 0.45)];
+      else if (fightMode === "skeleton") dogs = [makeSkeleton(world.w * 0.78, world.h * 0.42)];
+      else if (fightMode === "zombie") dogs = [makeZombie(world.w * 0.72, world.h * 0.42)];
+      else if (fightMode === "armytechno") dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
+      else if (fightMode === "titanzombie") dogs = [makeTitanZombie(world.w * 0.74, world.h * 0.42)];
+      else if (fightMode === "galaxywarrior") dogs = [makeGalaxyWarrior(world.w * 0.74, world.h * 0.42)];
+      else if (fightMode === "apocalypse") spawnApocalypseWave();
     }
 
     player.hp = player.hpMax;
@@ -1466,6 +1710,18 @@ function initFights() {
         d.summonCdLeft = 5000;
         d._zombiePhase2 = false;
       }
+      if (d.kind === "titanZombie") {
+        d.summonCdLeft = 2500;
+        d.smashCdLeft = 3500;
+        d.chargeActive = false;
+      }
+      if (d.kind === "galaxyWarrior") {
+        d.meteorCdLeft = 1800;
+        d.meteorShotsLeft = 0;
+        d.meteorShotCdLeft = 0;
+        d.pathWp = null;
+        d.pathRecalcMs = 0;
+      }
     }
 
     gameOver = false;
@@ -1491,7 +1747,14 @@ function initFights() {
 
   const setUi = () => {
     const pPct = clamp(player.hp / player.hpMax, 0, 1) * 100;
-    const barDogs = fightMode === "zombie" ? dogs.filter((d) => d.kind !== "zombieDog") : dogs;
+    const barDogs =
+      fightMode === "zombie"
+        ? dogs.filter((d) => d.kind !== "zombieDog")
+        : fightMode === "titanzombie"
+          ? dogs.filter((d) => d.kind !== "titanZombieDog")
+          : fightMode === "galaxywarrior"
+            ? dogs.filter((d) => d.kind !== "galaxyWarrior" || d.gwIsReal)
+            : dogs;
     const totalMax = barDogs.reduce((a, d) => a + d.hpMax, 0) || 1;
     const totalHp = barDogs.reduce((a, d) => a + Math.max(0, d.hp), 0);
     const dPct = clamp(totalHp / totalMax, 0, 1) * 100;
@@ -1501,7 +1764,14 @@ function initFights() {
     if (ui.dogText) ui.dogText.textContent = `${totalHp} / ${totalMax}`;
 
     const pReady = player.cdLeft <= 0 ? "ready" : `${(player.cdLeft / 1000).toFixed(1)}s`;
-    const cdPool = fightMode === "zombie" ? dogs.filter((d) => d.kind !== "zombieDog") : dogs;
+    const cdPool =
+      fightMode === "zombie"
+        ? dogs.filter((d) => d.kind !== "zombieDog")
+        : fightMode === "titanzombie"
+          ? dogs.filter((d) => d.kind !== "titanZombieDog")
+          : fightMode === "galaxywarrior"
+            ? dogs.filter((d) => d.kind !== "galaxyWarrior" || d.gwIsReal)
+            : dogs;
     const dogCdLeft = cdPool.reduce((m, d) => Math.min(m, d.cdLeft ?? 0), Infinity);
     const dReady = dogCdLeft <= 0 ? "ready" : `${(dogCdLeft / 1000).toFixed(1)}s`;
     const dashReady = player.dashCdLeft <= 0 ? "ready" : `${(player.dashCdLeft / 1000).toFixed(1)}s`;
@@ -1545,7 +1815,7 @@ function initFights() {
     if (isTypingTarget) return;
 
     const k = e.key.toLowerCase();
-    if (down && k === "scrolllock") {
+    if (down && (k === "scrolllock" || k === "e")) {
       activeWeaponSlot = activeWeaponSlot === "weapon1" ? "weapon2" : "weapon1";
       applyLoadout();
       setUi();
@@ -1583,16 +1853,148 @@ function initFights() {
       : d.kind === "techno"
         ? "Techno Super Dog"
         : d.kind === "armyTechno"
-          ? "Boss Update"
+          ? "Army Techno Dog"
+        : d.kind === "titanZombie"
+          ? "Titan Zombie"
+        : d.kind === "galaxyWarrior"
+          ? "Galaxy Warrior"
         : d.kind === "zombie"
           ? "Zombie"
           : d.kind === "zombieDog"
             ? "Zombie Dog"
+            : d.kind === "titanZombieDog"
+              ? "Titan Zombie Dog"
             : "Rogue Dog";
 
   const PHANTOM_LONG_PRESS_MS = 420;
+  const LASER_LONG_PRESS_MS = 420;
+  const POWER_LONG_PRESS_MS = 420;
   const PHANTOM_BLAST_RADIUS = 170;
   const PHANTOM_BLAST_DMG = 50;
+  const TITAN_QUAKE_FOLLOW_MS = 1000;
+  const TITAN_QUAKE_BLAST_MS = 500;
+  const TITAN_QUAKE_DMG = 3;
+  const TITAN_QUAKE_BLAST_RADIUS = Math.round(PHANTOM_BLAST_RADIUS * 0.3);
+
+  const GALAXY_METEOR_DMG = 10;
+  const GALAXY_METEOR_SPEED = 230;
+  const GALAXY_METEOR_INTERVAL_MS = 120;
+  const GALAXY_LASER_DPS = 8;
+  const GALAXY_LASER_HALF_W = 16;
+  const GALAXY_LASER_LEN = 4000;
+  const GALAXY_SLIDE_BOMB_DMG = 30;
+  const GALAXY_SLIDE_BOMB_HIT_MS = 500;
+
+  const POWER_TOOL_ACTIVE_MS = 4000;
+  const POWER_TOOL_RELOAD_MS = 2000;
+  const LASER_BLASTER_DPS = 11;
+  const CHAINSAW_DPS = 20;
+  const CHAINSAW_RANGE_PAD = 20;
+  const TECHNO_BLADE_BEAM_MS = 1000;
+  const TECHNO_BLADE_BEAM_DPS = 18;
+
+  const triggerGalaxySplit = (real) => {
+    if (!real || real.kind !== "galaxyWarrior") return false;
+    if (!real.gwIsReal) return false;
+    if (real.gwSplitDone) return false;
+    if (!fightStarted || gameOver) return false;
+    if (real.hp <= 0) return false;
+    if (real.hp > 500) return false;
+
+    real.gwSplitDone = true;
+    const clones = [real];
+    for (let i = 0; i < 5; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const rr = 22 + Math.random() * 18;
+      const c = makeGalaxyWarrior(
+        clamp(real.x + Math.cos(ang) * rr, 40, world.w - 40),
+        clamp(real.y + Math.sin(ang) * rr, 40, world.h - 40),
+      );
+      c.hp = real.hp;
+      c.gwIsReal = false;
+      c.gwSplitDone = true;
+      c.gwPhase = "run";
+      c.gwPhaseLeftMs = 1100 + Math.random() * 400;
+      c.gwAim = null;
+      c.gwSlideHitMs = {};
+      clones.push(c);
+      dogs.push(c);
+    }
+    for (const g of clones) {
+      g.gwPhase = "run";
+      g.gwPhaseLeftMs = 1100 + Math.random() * 400;
+      g.gwAim = null;
+      g.gwSlideHitMs = {};
+      g.pathWp = { x: 60 + Math.random() * (world.w - 120), y: 60 + Math.random() * (world.h - 120) };
+      g.pathRecalcMs = 0;
+    }
+    setStatus("Galaxy Warrior split into clones!");
+    return true;
+  };
+
+  const canMobTakeDamage = (d0) => {
+    if (!d0) return false;
+    if (d0.hp <= 0) return false;
+    if (d0.kind !== "galaxyWarrior") return true;
+    if (!d0.gwIsReal) return false;
+    if (d0.gwPhase === "laser") return false;
+    return true;
+  };
+
+  const applyMobDamage = (d0, dmg) => {
+    if (!canMobTakeDamage(d0)) return false;
+    if (dmg <= 0) return false;
+    d0.hp = clamp(d0.hp - dmg, 0, d0.hpMax);
+    if (d0.kind === "galaxyWarrior" && d0.gwIsReal && !d0.gwSplitDone && d0.hp > 0 && d0.hp <= 500) {
+      triggerGalaxySplit(d0);
+    }
+    return true;
+  };
+
+  const findFirstBlockingObstacle = (x1, y1, x2, y2, obs) => {
+    for (const b of obs) {
+      if (segmentIntersectsAabb(x1, y1, x2, y2, b)) return b;
+    }
+    return null;
+  };
+
+  const pickWaypointAroundBox = (fromX, fromY, goalX, goalY, box, margin) => {
+    const pts = [
+      { x: box.x - margin, y: box.y - margin },
+      { x: box.x + box.w + margin, y: box.y - margin },
+      { x: box.x - margin, y: box.y + box.h + margin },
+      { x: box.x + box.w + margin, y: box.y + box.h + margin },
+    ];
+    let best = null;
+    let bestScore = Infinity;
+    for (const p of pts) {
+      const x = clamp(p.x, margin, world.w - margin);
+      const y = clamp(p.y, margin, world.h - margin);
+      const score = Math.hypot(goalX - x, goalY - y) + 0.35 * Math.hypot(fromX - x, fromY - y);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { x, y };
+      }
+    }
+    return best;
+  };
+
+  const spawnTitanQuakes = (boss) => {
+    const waves = 8;
+    for (let i = 0; i < waves; i++) {
+      const ang = (Math.PI * 2 * i) / waves + (Math.random() * 0.26 - 0.13);
+      const speed = 165 + Math.random() * 55;
+      titanQuakes.push({
+        x: boss.x,
+        y: boss.y,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        ageMs: 0,
+        phase: "follow",
+      });
+    }
+    setStatus("Titan Zombie smashed the ground!");
+  };
 
   const screenToWorld = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
@@ -1609,6 +2011,7 @@ function initFights() {
   const getDogUnderWorldPos = (wx, wy) => {
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
+      if (d0.kind === "galaxyWarrior" && !d0.gwIsReal) continue;
       if (Math.hypot(wx - d0.x, wy - d0.y) <= d0.r + 10) return d0;
     }
     return null;
@@ -1635,7 +2038,7 @@ function initFights() {
         const dDist = Math.hypot(d0.x - dx, d0.y - dy);
         // "2 monster lengths" => 2 * (diameter) => 4 * radius.
         if (dDist <= d0.r * 4) {
-          d0.hp = clamp(d0.hp - splash, 0, d0.hpMax);
+          applyMobDamage(d0, splash);
         }
       }
     } else {
@@ -1644,7 +2047,7 @@ function initFights() {
       for (const d0 of dogs) {
         if (d0.hp <= 0) continue;
         if (Math.hypot(d0.x - cx, d0.y - cy) <= R + d0.r) {
-          d0.hp = clamp(d0.hp - splash, 0, d0.hpMax);
+          applyMobDamage(d0, splash);
         }
       }
     }
@@ -1681,7 +2084,7 @@ function initFights() {
       let dmg = 0;
       if (directTarget && d0 === directTarget) dmg = 80;
       else if (dist <= 95 + d0.r) dmg = 30;
-      if (dmg > 0) d0.hp = clamp(d0.hp - dmg, 0, d0.hpMax);
+      if (dmg > 0) applyMobDamage(d0, dmg);
     }
     setStatus("RPG explosion!");
   };
@@ -1727,8 +2130,8 @@ function initFights() {
       }
     }
     if (bestHit) {
-      bestHit.hp = clamp(bestHit.hp - 5, 0, bestHit.hpMax);
-      setStatus(`Laser Blast hit ${mobNameFrom(bestHit)} for 5`);
+      const ok = applyMobDamage(bestHit, 5);
+      if (ok) setStatus(`Laser Blast hit ${mobNameFrom(bestHit)} for 5`);
     } else {
       setStatus("Laser Blast fired");
     }
@@ -1746,6 +2149,16 @@ function initFights() {
         phantomAimY = wy;
         phantomLongPressStart = performance.now();
         phantomLockedTarget = getDogUnderWorldPos(wx, wy);
+      }
+      if (player.usingLaserBlast && fightStarted && !gameOver) {
+        const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+        laserLongPressStart = performance.now();
+        laserLockedTarget = getDogUnderWorldPos(wx, wy);
+      }
+      if ((player.usingLaserBlaster || player.usingChainsaw || player.usingTechnoblade) && fightStarted && !gameOver) {
+        const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+        powerLongPressStart = performance.now();
+        powerLockedTarget = getDogUnderWorldPos(wx, wy);
       }
     }
     if (e.button === 2) {
@@ -1775,8 +2188,53 @@ function initFights() {
         player.phantomCdLeft = player.phantomCdMs;
       }
     }
+    if (
+      player.usingLaserBlast &&
+      fightStarted &&
+      !gameOver &&
+      laserLongPressStart != null &&
+      laserLockedTarget &&
+      player.cdLeft <= 0
+    ) {
+      const dur = performance.now() - laserLongPressStart;
+      if (dur >= LASER_LONG_PRESS_MS && laserLockedTarget.hp > 0) {
+        player.cdLeft = 3000;
+        fireLaserBlast(laserLockedTarget);
+      }
+    }
+    if (
+      (player.usingLaserBlaster || player.usingChainsaw || player.usingTechnoblade) &&
+      fightStarted &&
+      !gameOver &&
+      powerLongPressStart != null &&
+      powerLockedTarget
+    ) {
+      const dur = performance.now() - powerLongPressStart;
+      if (dur >= POWER_LONG_PRESS_MS && powerLockedTarget.hp > 0) {
+        if (player.usingTechnoblade) {
+          player.technoBeamLeftMs = TECHNO_BLADE_BEAM_MS;
+          const dx = powerLockedTarget.x - player.x;
+          const dy = powerLockedTarget.y - player.y;
+          const n = Math.hypot(dx, dy) || 1;
+          player.technoBeamDir = { x: dx / n, y: dy / n };
+          setStatus("Technoblade beam!");
+        } else if (player.powerReloadLeftMs <= 0 && player.powerActiveLeftMs <= 0) {
+          player.powerActiveKind = player.usingLaserBlaster ? "laser_blaster" : "chainsaw";
+          player.powerActiveLeftMs = POWER_TOOL_ACTIVE_MS;
+          player.powerReloadLeftMs = POWER_TOOL_ACTIVE_MS + POWER_TOOL_RELOAD_MS;
+          player.powerLockedTarget = powerLockedTarget;
+          setStatus(player.powerActiveKind === "laser_blaster" ? "Laser Blaster online!" : "Chainsaw rev!");
+        } else {
+          setStatus("Reloading...");
+        }
+      }
+    }
     phantomLongPressStart = null;
     phantomLockedTarget = null;
+    laserLongPressStart = null;
+    laserLockedTarget = null;
+    powerLongPressStart = null;
+    powerLockedTarget = null;
     mouseDown = false;
   });
 
@@ -1784,6 +2242,7 @@ function initFights() {
     if (!fightStarted) return;
     if (gameOver) return;
     if (player.usingPhantomSniper) return;
+    if (player.usingLaserBlast) return; // Laser Blast is fired via long-press
     if (player.cdLeft > 0) return;
     let best = null;
     let bestD = Infinity;
@@ -1802,13 +2261,8 @@ function initFights() {
       fireRpg(best);
       return;
     }
-    if (player.usingLaserBlast) {
-      player.cdLeft = 3000;
-      fireLaserBlast(best);
-      return;
-    }
     if (player.usingGattling) {
-      player.cdLeft = 3000;
+      player.cdLeft = 1000;
       player.gattlingShotsLeft = 10;
       player.gattlingShotCdLeft = 0;
       setStatus("Gattling burst!");
@@ -1839,8 +2293,8 @@ function initFights() {
     const range = (player.r + best.r + 16) * (player.rangeMult ?? 1.0);
     if (bestD > range) return; // melee range
     player.cdLeft = player.cdMs;
-    best.hp = clamp(best.hp - player.dmg, 0, best.hpMax);
-    setStatus(`Hit ${mobNameFrom(best)} for ${player.dmg}`);
+    const ok = applyMobDamage(best, player.dmg);
+    if (ok) setStatus(`Hit ${mobNameFrom(best)} for ${player.dmg}`);
   };
 
   const tryDash = () => {
@@ -1869,7 +2323,8 @@ function initFights() {
     if (gameOver) return;
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
-      if (d0.kind === "skeleton" || d0.kind === "techno" || d0.kind === "armyTechno") continue;
+      if (d0.kind === "skeleton" || d0.kind === "techno" || d0.kind === "armyTechno" || d0.kind === "titanZombie" || d0.kind === "galaxyWarrior")
+        continue;
       if (d0.cdLeft > 0) continue;
       const d = len(d0.x - player.x, d0.y - player.y);
       if (d > player.r + d0.r + 10) continue;
@@ -2064,7 +2519,7 @@ function initFights() {
           return;
         }
       }
-      setStatus(d0.kind === "armyTechno" ? "Boss Update used Bite" : "Techno Super Dog used Bite");
+      setStatus(d0.kind === "armyTechno" ? "Army Techno Dog used Bite" : "Techno Super Dog used Bite");
       d0.nextActionInMs = 1000;
       return;
     }
@@ -2073,7 +2528,7 @@ function initFights() {
       d0.gattlingShotCdMs = 0;
       d0.gattlingBurstLeftMs = 1300;
       d0.nextActionInMs = 1600;
-      setStatus("Boss Update used Rapid Gattling Shot");
+      setStatus("Army Techno Dog used Rapid Gattling Shot");
       return;
     }
     // laser
@@ -2084,7 +2539,7 @@ function initFights() {
     const isArmy = d0.kind === "armyTechno";
     d0.laserActiveMs = isArmy ? 3000 : 5000;
     d0.nextActionInMs = isArmy ? 4000 : 6000; // active + 1s interval
-    setStatus(isArmy ? "Boss Update fired Super Laser" : "Techno Super Dog fired Laser");
+    setStatus(isArmy ? "Army Techno Dog fired Super Laser" : "Techno Super Dog fired Laser");
   };
 
   function step(dt) {
@@ -2101,6 +2556,13 @@ function initFights() {
     player.gattlingShotCdLeft = Math.max(0, player.gattlingShotCdLeft - dt * 1000);
     player.laserFxMs = Math.max(0, player.laserFxMs - dt * 1000);
     for (const d0 of dogs) d0.cdLeft = Math.max(0, d0.cdLeft - dt * 1000);
+    for (const d0 of dogs) {
+      if (d0.kind === "galaxyWarrior") {
+        d0.meteorCdLeft = Math.max(0, (d0.meteorCdLeft ?? 0) - dt * 1000);
+        d0.meteorShotCdLeft = Math.max(0, (d0.meteorShotCdLeft ?? 0) - dt * 1000);
+        d0.pathRecalcMs = Math.max(0, (d0.pathRecalcMs ?? 0) - dt * 1000);
+      }
+    }
 
     if (player.gattlingShotsLeft > 0) {
       while (player.gattlingShotsLeft > 0 && player.gattlingShotCdLeft <= 0) {
@@ -2207,6 +2669,96 @@ function initFights() {
             setStatus("Zombie summoned a zombie dog!");
           }
         }
+        if (d0.kind === "titanZombie" && fightMode === "titanzombie") {
+          d0.summonCdLeft = Math.max(0, (d0.summonCdLeft ?? d0.summonCdMs) - dt * 1000);
+          if (d0.summonCdLeft <= 0 && d0.hp > 0) {
+            d0.summonCdLeft = d0.summonCdMs;
+            const sAng = Math.random() * Math.PI * 2;
+            const sDist = 120 + Math.random() * 90;
+            const zx = clamp(player.x + Math.cos(sAng) * sDist, 44, world.w - 44);
+            const zy = clamp(player.y + Math.sin(sAng) * sDist, 44, world.h - 44);
+            dogs.push(makeTitanZombieDog(zx, zy));
+            setStatus("Titan Zombie summoned a Titan Zombie Dog!");
+          }
+
+          d0.smashCdLeft = Math.max(0, (d0.smashCdLeft ?? d0.smashCdMs) - dt * 1000);
+          if (!d0.chargeActive && d0.smashCdLeft <= 0) {
+            d0.chargeActive = true;
+            d0.smashCdLeft = d0.smashCdMs;
+          }
+        }
+        if (d0.kind === "galaxyWarrior" && fightMode === "galaxywarrior") {
+          // Split once when real form drops below 500 HP.
+          if (d0.gwIsReal && !d0.gwSplitDone && d0.hp > 0 && d0.hp <= 500) {
+            triggerGalaxySplit(d0);
+          }
+
+          // Phase countdown (shared behavior)
+          if (d0.gwPhase && d0.gwPhase !== "normal") {
+            d0.gwPhaseLeftMs = Math.max(0, (d0.gwPhaseLeftMs ?? 0) - dt * 1000);
+            if (d0.gwPhaseLeftMs <= 0) {
+              if (d0.gwPhase === "run") {
+                d0.gwPhase = "telegraph";
+                d0.gwPhaseLeftMs = 1000;
+                d0.gwAim = { x: player.x, y: player.y };
+              } else if (d0.gwPhase === "telegraph") {
+                d0.gwPhase = "laser";
+                d0.gwPhaseLeftMs = 5000;
+                d0.gwAim = { x: player.x, y: player.y };
+                const dx = d0.gwAim.x - d0.x;
+                const dy = d0.gwAim.y - d0.y;
+                const n = Math.hypot(dx, dy) || 1;
+                d0.gwLaserDir = { x: dx / n, y: dy / n };
+              } else if (d0.gwPhase === "laser") {
+                // After firing, come back and fight for a bit, then leave again.
+                d0.gwPhase = "fight";
+                d0.gwPhaseLeftMs = 1400 + Math.random() * 900;
+                d0.gwAim = null;
+                d0.gwSlideHitMs = {};
+              } else if (d0.gwPhase === "fight") {
+                d0.gwPhase = "run";
+                d0.gwPhaseLeftMs = 950 + Math.random() * 650;
+                d0.gwAim = null;
+                d0.gwSlideHitMs = {};
+                // New run target each cycle (each clone picks a different path).
+                d0.pathWp = { x: 60 + Math.random() * (world.w - 120), y: 60 + Math.random() * (world.h - 120) };
+                d0.pathRecalcMs = 0;
+              }
+            }
+          }
+
+          // Meteor volley: 10 consecutive slow meteors.
+          if (d0.gwIsReal && (d0.gwPhase === "normal" || d0.gwPhase === "fight") && (d0.meteorShotsLeft ?? 0) > 0) {
+            while (d0.meteorShotsLeft > 0 && (d0.meteorShotCdLeft ?? 0) <= 0) {
+              d0.meteorShotCdLeft = GALAXY_METEOR_INTERVAL_MS;
+              d0.meteorShotsLeft -= 1;
+              const dx = player.x - d0.x;
+              const dy = player.y - d0.y;
+              const n = Math.hypot(dx, dy) || 1;
+              const ux = dx / n;
+              const uy = dy / n;
+              const spread = (Math.random() * 2 - 1) * 0.16;
+              const ca = Math.cos(spread);
+              const sa = Math.sin(spread);
+              const sx = ux * ca - uy * sa;
+              const sy = ux * sa + uy * ca;
+              meteors.push({
+                x: d0.x + sx * 22,
+                y: d0.y + sy * 22,
+                vx: sx * GALAXY_METEOR_SPEED,
+                vy: sy * GALAXY_METEOR_SPEED,
+                dmg: GALAXY_METEOR_DMG,
+                r: 7,
+                ttlMs: 5200,
+              });
+            }
+          } else if (d0.gwIsReal && (d0.gwPhase === "normal" || d0.gwPhase === "fight") && (d0.meteorCdLeft ?? 0) <= 0 && Math.random() < 0.03) {
+            d0.meteorCdLeft = d0.meteorCdMs ?? 7000;
+            d0.meteorShotsLeft = 10;
+            d0.meteorShotCdLeft = 0;
+            setStatus("Galaxy Warrior launched a meteor volley!");
+          }
+        }
         if (d0.kind === "techno" || d0.kind === "armyTechno") technoAttackStep(d0, dt * 1000);
         if (gameOver) break;
         let dx = player.x - d0.x;
@@ -2234,6 +2786,139 @@ function initFights() {
             dy = 0;
           }
           d = Math.hypot(dx, dy) || 1;
+        }
+        if (d0.kind === "titanZombie") {
+          const pref = player.r * 10;
+          const close = pref - player.r * 2.5;
+          const far = pref + player.r * 2.5;
+          if (d0.chargeActive) {
+            // Charge at 2x player speed, then smash when near ~3 player lengths.
+            if (d <= player.r * 6) {
+              d0.chargeActive = false;
+              spawnTitanQuakes(d0);
+              dx = 0;
+              dy = 0;
+              d = 1;
+            } else {
+              dx = player.x - d0.x;
+              dy = player.y - d0.y;
+              d = Math.hypot(dx, dy) || 1;
+            }
+          } else if (d < close) {
+            // Keep distance from player by moving away.
+            dx = d0.x - player.x;
+            dy = d0.y - player.y;
+            d = Math.hypot(dx, dy) || 1;
+          } else if (d > far) {
+            // Reposition back into summoning range.
+            dx = player.x - d0.x;
+            dy = player.y - d0.y;
+            d = Math.hypot(dx, dy) || 1;
+          } else {
+            dx = 0;
+            dy = 0;
+            d = 1;
+          }
+        }
+
+        if (d0.kind === "galaxyWarrior") {
+          const desired = player.r * 10; // 5 player lengths (~10 radii)
+          const near = desired * 0.55;
+          const far = desired * 1.05;
+          // Pathfinding-lite: if blocked, go around the first blocking obstacle corner.
+          const obs = getSolidObstacles();
+          const block = findFirstBlockingObstacle(d0.x, d0.y, player.x, player.y, obs);
+          let tx = player.x;
+          let ty = player.y;
+          const isLocked = d0.gwPhase === "telegraph" || d0.gwPhase === "laser";
+          const isRun = d0.gwPhase === "run";
+          const isFight = d0.gwPhase === "fight" || d0.gwPhase === "normal";
+
+          if (isLocked) {
+            dx = 0;
+            dy = 0;
+            d = 1;
+          } else {
+            // Decide primary target.
+            if (isRun && d0.pathWp) {
+              tx = d0.pathWp.x;
+              ty = d0.pathWp.y;
+            }
+
+            // If blocked, pick a corner waypoint around the blocker toward the current target.
+            const block2 = findFirstBlockingObstacle(d0.x, d0.y, tx, ty, obs);
+            if (block2) {
+              if (!d0.pathWp || (d0.pathRecalcMs ?? 0) <= 0 || Math.hypot(d0.pathWp.x - d0.x, d0.pathWp.y - d0.y) < 28) {
+                d0.pathWp = pickWaypointAroundBox(d0.x, d0.y, tx, ty, block2, Math.max(26, d0.r + 18));
+                d0.pathRecalcMs = 240;
+              }
+              if (d0.pathWp) {
+                tx = d0.pathWp.x;
+                ty = d0.pathWp.y;
+              }
+            } else if (!isRun) {
+              // In fight/normal, clear obstacle waypoint when unblocked.
+              d0.pathWp = null;
+            }
+
+            const distToTx = Math.hypot(tx - d0.x, ty - d0.y);
+            if (isRun && distToTx < 40) {
+              // reached run target, pick a new one so each clone keeps taking unique routes
+              d0.pathWp = { x: 60 + Math.random() * (world.w - 120), y: 60 + Math.random() * (world.h - 120) };
+              tx = d0.pathWp.x;
+              ty = d0.pathWp.y;
+            }
+
+            if (isFight) {
+              if (d > far) {
+                dx = tx - d0.x;
+                dy = ty - d0.y;
+                d = Math.hypot(dx, dy) || 1;
+              } else if (d < near) {
+                // stay aggressive but don't overlap: small strafe when too close
+                const sgn = ((animT * 3) | 0) % 2 === 0 ? 1 : -1;
+                const px = -(player.y - d0.y);
+                const py = player.x - d0.x;
+                const pn = Math.hypot(px, py) || 1;
+                dx = (px / pn) * sgn;
+                dy = (py / pn) * sgn;
+                d = 1;
+              } else {
+                dx = tx - d0.x;
+                dy = ty - d0.y;
+                d = Math.hypot(dx, dy) || 1;
+              }
+            } else {
+              // run: always move toward target
+              dx = tx - d0.x;
+              dy = ty - d0.y;
+              d = Math.hypot(dx, dy) || 1;
+            }
+          }
+
+          // Slash attack (very frequent)
+          if (
+            d0.gwIsReal &&
+            (d0.gwPhase === "normal" || d0.gwPhase === "fight") &&
+            d0.cdLeft <= 0 &&
+            Math.hypot(player.x - d0.x, player.y - d0.y) <= player.r + d0.r + 18
+          ) {
+            const dmg = d0.dmg ?? 20;
+            // Slash every 1s; if it connects, instantly slash again once.
+            player.hp = clamp(player.hp - dmg, 0, player.hpMax);
+            if (player.hp > 0 && Math.hypot(player.x - d0.x, player.y - d0.y) <= player.r + d0.r + 18) {
+              player.hp = clamp(player.hp - dmg, 0, player.hpMax);
+              setStatus(`Galaxy Warrior combo slashed you for ${dmg}×2`);
+            } else {
+              setStatus(`Galaxy Warrior slashed you for ${dmg}`);
+            }
+            d0.cdLeft = d0.cdMs ?? 1000;
+            if (player.hp <= 0) {
+              gameOver = true;
+              setStatus("You were defeated");
+              break;
+            }
+          }
         }
 
         if (d0.kind === "skeleton") {
@@ -2263,6 +2948,10 @@ function initFights() {
           moveSpd = player.speed * 1.08;
           if (d0.hp < 60) moveSpd *= 1.3;
           if (dogs.some((z) => z.kind === "zombieDog" && z.hp > 0)) moveSpd *= 0.48;
+        } else if (d0.kind === "titanZombie") {
+          moveSpd = d0.chargeActive ? player.speed * 2 : d0.speed;
+        } else if (d0.kind === "galaxyWarrior") {
+          moveSpd = (d0.gwPhase === "telegraph" || d0.gwPhase === "laser") ? 0 : d0.speed;
         }
         let ddx = ux * moveSpd * dt;
         let ddy = uy * moveSpd * dt;
@@ -2273,6 +2962,77 @@ function initFights() {
         const pushedDog = resolveCircleVsObstacles({ x: dax, y: day }, d0.r, dogSolid);
         d0.x = pushedDog.x;
         d0.y = pushedDog.y;
+      }
+
+      // Galaxy Warrior laser damage + slide bombs + merge cleanup (per-frame, after movement)
+      if (fightMode === "galaxywarrior") {
+        const slideBoxes = getSlideBoxes();
+        for (const g0 of dogs) {
+          if (g0.kind !== "galaxyWarrior" || g0.hp <= 0) continue;
+          if (g0.gwPhase !== "laser") continue;
+
+          const ux = g0.gwLaserDir?.x ?? 1;
+          const uy = g0.gwLaserDir?.y ?? 0;
+          const x1 = g0.x;
+          const y1 = g0.y;
+          const x2 = g0.x + ux * GALAXY_LASER_LEN;
+          const y2 = g0.y + uy * GALAXY_LASER_LEN;
+
+          const dist = distancePointToSegment(player.x, player.y, x1, y1, x2, y2);
+          let blocked = false;
+          for (const box of slideBoxes) {
+            if (segmentIntersectsAabb(x1, y1, player.x, player.y, box)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (!blocked && dist <= player.r + GALAXY_LASER_HALF_W) {
+            player.hp = clamp(player.hp - GALAXY_LASER_DPS * dt, 0, player.hpMax);
+            if (player.hp <= 0) {
+              gameOver = true;
+              setStatus("You were defeated");
+              break;
+            }
+          }
+
+          // Slide bombs: if beam hits a slide for 0.5s, explode (30 dmg)
+          for (let i = 0; i < slideBoxes.length; i++) {
+            const box = slideBoxes[i];
+            const hitsSlide = segmentIntersectsAabb(x1, y1, x2, y2, box);
+            const key = String(i);
+            const cur = g0.gwSlideHitMs?.[key] ?? 0;
+            const next = hitsSlide ? cur + dt * 1000 : 0;
+            g0.gwSlideHitMs[key] = next;
+            if (hitsSlide && next >= GALAXY_SLIDE_BOMB_HIT_MS) {
+              g0.gwSlideHitMs[key] = 0;
+              const cx = box.x + box.w / 2;
+              const cy = box.y + box.h / 2;
+              slideExplosionMs = 450;
+              const blastR = 140;
+              const pd = Math.hypot(player.x - cx, player.y - cy);
+              if (pd <= blastR) {
+                player.hp = clamp(player.hp - GALAXY_SLIDE_BOMB_DMG, 0, player.hpMax);
+                setStatus(`Slide bomb hit you for ${GALAXY_SLIDE_BOMB_DMG}`);
+                if (player.hp <= 0) {
+                  gameOver = true;
+                  setStatus("You were defeated");
+                  break;
+                }
+              }
+            }
+          }
+          if (gameOver) break;
+        }
+
+        // Unclone only when the real one is under 10 HP.
+        const real = dogs.find((d0) => d0.kind === "galaxyWarrior" && d0.gwIsReal);
+        if (real && real.hp > 0 && real.hp < 10 && dogs.some((d0) => d0.kind === "galaxyWarrior" && !d0.gwIsReal)) {
+          dogs = dogs.filter((d0) => d0.kind !== "galaxyWarrior" || d0.gwIsReal);
+          real.gwPhase = "normal";
+          real.gwAim = null;
+          real.gwSlideHitMs = {};
+          setStatus("Galaxy Warrior reformed!");
+        }
       }
 
       if (arrows.length && !gameOver) {
@@ -2296,8 +3056,8 @@ function initFights() {
             for (const d0 of dogs) {
               if (d0.hp <= 0) continue;
               if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + a.r) {
-                d0.hp = clamp(d0.hp - a.dmg, 0, d0.hpMax);
-                setStatus(`Arrow hit ${mobNameFrom(d0)} for ${a.dmg}`);
+                const ok = applyMobDamage(d0, a.dmg);
+                if (ok) setStatus(`Arrow hit ${mobNameFrom(d0)} for ${a.dmg}`);
                 hitDog = true;
                 break;
               }
@@ -2346,8 +3106,8 @@ function initFights() {
           for (const d0 of dogs) {
             if (d0.hp <= 0) continue;
             if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + b.r) {
-              d0.hp = clamp(d0.hp - b.dmg, 0, d0.hpMax);
-              setStatus(`Phantom round hit ${mobNameFrom(d0)} for ${b.dmg}`);
+              const ok = applyMobDamage(d0, b.dmg);
+              if (ok) setStatus(`Phantom round hit ${mobNameFrom(d0)} for ${b.dmg}`);
               consumed = true;
               break;
             }
@@ -2389,6 +3149,79 @@ function initFights() {
         rockets = nextRockets;
       }
 
+      if (meteors.length && !gameOver) {
+        const nextM = [];
+        const obs = getSolidObstacles();
+        for (const m of meteors) {
+          const ox = m.x;
+          const oy = m.y;
+          const x = ox + m.vx * dt;
+          const y = oy + m.vy * dt;
+          let dead = false;
+          for (const box of obs) {
+            if (circleIntersectsAabb(x, y, m.r, box) || segmentIntersectsAabb(ox, oy, x, y, box)) {
+              dead = true;
+              break;
+            }
+          }
+          if (dead) continue;
+          if (Math.hypot(x - player.x, y - player.y) <= player.r + m.r) {
+            player.hp = clamp(player.hp - m.dmg, 0, player.hpMax);
+            setStatus(`Meteor hit you for ${m.dmg}`);
+            if (player.hp <= 0) {
+              gameOver = true;
+              setStatus("You were defeated");
+            }
+            continue;
+          }
+          const ttl = (m.ttlMs ?? 4500) - dt * 1000;
+          if (ttl <= 0) continue;
+          if (x < -120 || x > world.w + 120 || y < -120 || y > world.h + 120) continue;
+          nextM.push({ ...m, x, y, ttlMs: ttl });
+        }
+        meteors = nextM;
+      }
+
+      if (titanQuakes.length && !gameOver) {
+        const nextQuakes = [];
+        for (const q of titanQuakes) {
+          if (q.phase === "follow") {
+            const tx = player.x;
+            const ty = player.y;
+            const qdx = tx - q.x;
+            const qdy = ty - q.y;
+            const qd = Math.hypot(qdx, qdy) || 1;
+            const chase = 250;
+            q.vx = (q.vx * 0.7) + (qdx / qd) * chase * 0.3;
+            q.vy = (q.vy * 0.7) + (qdy / qd) * chase * 0.3;
+            q.x = clamp(q.x + q.vx * dt, 8, world.w - 8);
+            q.y = clamp(q.y + q.vy * dt, 8, world.h - 8);
+            q.ageMs += dt * 1000;
+            if (q.ageMs >= TITAN_QUAKE_FOLLOW_MS) {
+              q.phase = "blast";
+              q.ageMs = 0;
+            }
+            nextQuakes.push(q);
+            continue;
+          }
+          q.ageMs += dt * 1000;
+          const blastPct = clamp(1 - q.ageMs / TITAN_QUAKE_BLAST_MS, 0, 1);
+          const distToPlayer = Math.hypot(player.x - q.x, player.y - q.y);
+          const blastR = TITAN_QUAKE_BLAST_RADIUS * Math.max(0.45, blastPct);
+          if (!q.didDamage && distToPlayer <= blastR + player.r) {
+            q.didDamage = true;
+            player.hp = clamp(player.hp - TITAN_QUAKE_DMG, 0, player.hpMax);
+            setStatus(`Titan quake hit you for ${TITAN_QUAKE_DMG}`);
+            if (player.hp <= 0) {
+              gameOver = true;
+              setStatus("You were defeated");
+            }
+          }
+          if (q.ageMs < TITAN_QUAKE_BLAST_MS) nextQuakes.push(q);
+        }
+        titanQuakes = nextQuakes;
+      }
+
       const hasTechno = dogs.some((d0) => (d0.kind === "techno" || d0.kind === "armyTechno") && d0.hp > 0);
       if (!hasTechno) dogHitPlayer();
     }
@@ -2400,6 +3233,7 @@ function initFights() {
           d0.rewarded = true;
           const s = normalizeSave(loadSave());
           if (d0.kind === "zombieDog") s.stats.zombieDogKills = (s.stats.zombieDogKills || 0) + 1;
+          else if (d0.kind === "titanZombieDog") s.stats.zombieDogKills = (s.stats.zombieDogKills || 0) + 1;
           else if (d0.kind !== "techno" && d0.kind !== "armyTechno" && d0.kind !== "skeleton" && d0.kind !== "zombie")
             s.stats.rogueKills += 1;
           saveGame(s);
@@ -2431,6 +3265,8 @@ function initFights() {
           else if (fightMode === "skeleton") s.stats.skeletonWins += 1;
           else if (fightMode === "zombie") s.stats.zombieWins += 1;
           else if (fightMode === "armytechno") s.stats.technoWins += 1;
+          else if (fightMode === "titanzombie") s.stats.zombieWins += 1;
+          else if (fightMode === "galaxywarrior") s.stats.technoWins += 1;
           else s.stats.singleWins += 1;
           saveGame(s);
           if (!rewardGranted) {
@@ -2457,10 +3293,48 @@ function initFights() {
               revealBossCrateRewards?.(gotIds);
               setStatus(`Victory! +$300 | Boss Crates opened: ${crates} → ${got.join(", ")}`);
             }
+            else if (fightMode === "titanzombie") {
+              const r = Math.random();
+              const crates = r < 0.7 ? 2 : r < 0.95 ? 3 : 4;
+              const s2 = normalizeSave(loadSave());
+              const got = [];
+              const gotIds = [];
+              for (let i = 0; i < crates; i++) {
+                const itemId = rollBossCrateLoot();
+                ensureItemInInventory(s2, itemId);
+                gotIds.push(itemId);
+                got.push(ITEMS[itemId]?.name || itemId);
+              }
+              s2.stats.bossCrates = (s2.stats.bossCrates || 0) + crates;
+              saveGame(s2);
+              updateWeaponsSlots();
+              revealBossCrateRewards?.(gotIds);
+              setStatus(`Titan Zombie defeated! Boss Crates opened: ${crates} → ${got.join(", ")}`);
+            }
+            else if (fightMode === "galaxywarrior") {
+              addMoney(400);
+              addMagicoin(5);
+              const r = Math.random();
+              const crates = r < 0.7 ? 3 : r < 0.95 ? 4 : 5;
+              const s2 = normalizeSave(loadSave());
+              const got = [];
+              const gotIds = [];
+              for (let i = 0; i < crates; i++) {
+                const itemId = rollBossCrateLoot();
+                ensureItemInInventory(s2, itemId);
+                gotIds.push(itemId);
+                got.push(ITEMS[itemId]?.name || itemId);
+              }
+              s2.stats.bossCrates = (s2.stats.bossCrates || 0) + crates;
+              saveGame(s2);
+              updateWeaponsSlots();
+              revealBossCrateRewards?.(gotIds);
+              setStatus(`Galaxy Warrior defeated! +$400 +5 magicoin | Boss Crates opened: ${crates} → ${got.join(", ")}`);
+            }
             else addMoney(10);
           }
           runForeverTaskEngine();
-          if (fightMode !== "armytechno") setStatus("Victory");
+          if (fightMode !== "armytechno" && fightMode !== "titanzombie" && fightMode !== "galaxywarrior") setStatus("Victory");
         }
       }
     }
@@ -2627,14 +3501,97 @@ function initFights() {
       }
     }
 
+    if (titanQuakes.length) {
+      for (const q of titanQuakes) {
+        if (q.phase === "follow") {
+          ctx.strokeStyle = "rgba(120,70,45,.7)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(q.x - 8, q.y - 6);
+          ctx.lineTo(q.x + 6, q.y + 5);
+          ctx.lineTo(q.x - 4, q.y + 10);
+          ctx.stroke();
+        } else {
+          const t = q.ageMs / TITAN_QUAKE_BLAST_MS;
+          const r = (1 - t) * TITAN_QUAKE_BLAST_RADIUS;
+          ctx.fillStyle = `rgba(255,120,90,${(0.3 * (1 - t)).toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(q.x, q.y, Math.max(10, r), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = `rgba(255,230,170,${(0.9 * (1 - t)).toFixed(3)})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(q.x, q.y, Math.max(8, r - 5), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    if (meteors.length) {
+      for (const m of meteors) {
+        const ang = Math.atan2(m.vy, m.vx);
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(ang);
+        ctx.fillStyle = "rgba(255,160,80,.9)";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, m.r + 6, m.r + 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(190,120,255,.95)";
+        ctx.beginPath();
+        ctx.arc(0, 0, m.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(120,220,255,.7)";
+        ctx.fillRect(-m.r - 10, -2, 10, 4);
+        ctx.restore();
+      }
+    }
+
+    // Galaxy telegraph + lasers (drawn before entities for clarity)
+    if (dogs.some((d0) => d0.kind === "galaxyWarrior" && d0.hp > 0)) {
+      for (const g0 of dogs) {
+        if (g0.kind !== "galaxyWarrior" || g0.hp <= 0) continue;
+        if (g0.gwPhase === "telegraph") {
+          ctx.strokeStyle = "rgba(255,60,60,.85)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(g0.x, g0.y);
+          ctx.lineTo(player.x, player.y);
+          ctx.stroke();
+        }
+        if (g0.gwPhase === "laser") {
+          const ux = g0.gwLaserDir?.x ?? 1;
+          const uy = g0.gwLaserDir?.y ?? 0;
+          let x2 = g0.x + ux * GALAXY_LASER_LEN;
+          let y2 = g0.y + uy * GALAXY_LASER_LEN;
+          const end = clipLaserToSlides(g0.x, g0.y - 2, x2, y2);
+          x2 = end.x;
+          y2 = end.y;
+          ctx.strokeStyle = "rgba(170,90,255,.9)";
+          ctx.lineWidth = 14;
+          ctx.beginPath();
+          ctx.moveTo(g0.x, g0.y - 2);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(218,170,255,.95)";
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(g0.x, g0.y - 2);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+      }
+    }
+
     // entities
     drawPlayer(ctx, player, animT, lastMove);
     for (const d0 of dogs) {
       if (d0.hp <= 0) continue;
       if (d0.kind === "techno" || d0.kind === "armyTechno") drawTechnoDog(ctx, d0, animT);
       else if (d0.kind === "skeleton") drawSkeleton(ctx, d0, animT);
-      else if (d0.kind === "zombie") drawZombie(ctx, d0, animT);
-      else if (d0.kind === "zombieDog") drawZombieDog(ctx, d0, animT);
+      else if (d0.kind === "zombie" || d0.kind === "titanZombie") drawZombie(ctx, d0, animT);
+      else if (d0.kind === "zombieDog" || d0.kind === "titanZombieDog") drawZombieDog(ctx, d0, animT);
+      else if (d0.kind === "galaxyWarrior") drawGalaxyWarrior(ctx, d0, animT);
       else drawRogueDog(ctx, d0, animT);
     }
 
@@ -2809,12 +3766,6 @@ function initFights() {
       for (let x = 0; x < sw; x++) {
         let c = sprite.p[y * sw + x];
         if (!c) continue;
-        if (isArmy) {
-          if (c === "#23B8C2") c = "#5F8B49";
-          else if (c === "#4CE0E7") c = "#7EAB63";
-          else if (c === "#168E9E") c = "#3E6030";
-          else if (c === "#0D3C49") c = "#233427";
-        }
         g.fillStyle = c;
         g.fillRect(dx + x * scale, dy + y * scale, scale, scale);
       }
@@ -2826,6 +3777,106 @@ function initFights() {
     g.beginPath();
     g.arc(d0.x, d0.y, d0.r + 8, 0, Math.PI * 2);
     g.stroke();
+  }
+
+  function drawGalaxyWarrior(g, d0, t) {
+    // Hand-drawn "galaxy knight" theme (no external image).
+    // Base body aura
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
+    g.save();
+    g.translate(d0.x, d0.y);
+    const isPurplePhase = d0.gwPhase === "run" || d0.gwPhase === "telegraph" || d0.gwPhase === "laser" || d0.gwPhase === "fight";
+    const redT = isPurplePhase ? 0 : clamp((500 - (d0.hp ?? 0)) / 500, 0, 1);
+    const auraR = 140 + Math.round(115 * redT);
+    const auraG = 80 - Math.round(40 * redT);
+    const auraB = 255 - Math.round(210 * redT);
+    g.fillStyle = `rgba(${auraR},${auraG},${auraB},${(0.14 + pulse * 0.08).toFixed(3)})`;
+    g.beginPath();
+    g.arc(0, 0, d0.r + 18, 0, Math.PI * 2);
+    g.fill();
+
+    // Shadow
+    g.fillStyle = "rgba(0,0,0,.28)";
+    g.beginPath();
+    g.ellipse(0, d0.r * 0.7, d0.r * 1.05, d0.r * 0.38, 0, 0, Math.PI * 2);
+    g.fill();
+
+    // Armor core (tints toward red under 500 HP)
+    const coreR = 11 + Math.round(120 * redT);
+    const coreG = 13;
+    const coreB = 34;
+    g.fillStyle = `rgb(${coreR},${coreG},${coreB})`;
+    g.beginPath();
+    g.arc(0, 0, d0.r * 0.95, 0, Math.PI * 2);
+    g.fill();
+
+    // Galaxy swirl highlight
+    g.strokeStyle = "rgba(180,120,255,.85)";
+    g.lineWidth = 5;
+    g.beginPath();
+    g.arc(-4, -2, d0.r * 0.55, 0.4, 2.8);
+    g.stroke();
+    g.strokeStyle = "rgba(120,220,255,.75)";
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(3, -5, d0.r * 0.38, 0.9, 3.7);
+    g.stroke();
+
+    // Stars
+    for (let i = 0; i < 10; i++) {
+      const a = (i * 999 + ((t * 60) | 0) * 13) % 360;
+      const ang = (a * Math.PI) / 180;
+      const rr = d0.r * (0.12 + ((i * 37) % 10) / 40);
+      const x = Math.cos(ang) * rr;
+      const y = Math.sin(ang) * rr - 6;
+      g.fillStyle = i % 3 === 0 ? "rgba(255,255,255,.85)" : "rgba(180,240,255,.75)";
+      g.fillRect(x, y, 2, 2);
+    }
+
+    // Helmet + eyes
+    g.fillStyle = "#11163B";
+    g.fillRect(-d0.r * 0.6, -d0.r * 0.85, d0.r * 1.2, d0.r * 0.65);
+    g.fillStyle = "rgba(255,120,255,.95)";
+    g.fillRect(-10, -18, 6, 4);
+    g.fillRect(4, -18, 6, 4);
+
+    // Crown gem
+    g.fillStyle = "rgba(200,140,255,.95)";
+    g.beginPath();
+    g.arc(0, -d0.r * 0.95, 6, 0, Math.PI * 2);
+    g.fill();
+
+    // Shield (left)
+    g.fillStyle = "rgba(55,40,90,.95)";
+    g.beginPath();
+    g.arc(-d0.r * 0.95, 10, d0.r * 0.55, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "rgba(180,120,255,.55)";
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(-d0.r * 0.95, 10, d0.r * 0.55, 0, Math.PI * 2);
+    g.stroke();
+
+    // Sword (right)
+    g.save();
+    g.translate(d0.r * 1.05, 2);
+    g.rotate(0.32);
+    g.fillStyle = "rgba(120,220,255,.85)";
+    g.fillRect(0, -6, 44, 12);
+    g.fillStyle = "rgba(180,120,255,.9)";
+    g.fillRect(8, -3, 36, 6);
+    g.fillStyle = "#2B214D";
+    g.fillRect(-10, -9, 12, 18);
+    g.restore();
+
+    // Outline ring for readability
+    g.strokeStyle = "rgba(220,170,255,.35)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(0, 0, d0.r + 8, 0, Math.PI * 2);
+    g.stroke();
+
+    g.restore();
   }
 
   function drawTechnoDog(g, d0, t) {
@@ -2916,7 +3967,7 @@ function initFights() {
   }
 
   function drawZombieDog(g, d0, t) {
-    const scale = 4;
+    const scale = d0.kind === "titanZombieDog" ? 10 : 4;
     const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
     const frame = moving ? (((t * 12) | 0) % 2) : 0;
     const sprite = getZombieDogSprite(frame);
@@ -2926,7 +3977,7 @@ function initFights() {
     const dy = Math.round(d0.y - (sh * scale) / 2);
     g.fillStyle = "rgba(0,0,0,.25)";
     g.beginPath();
-    g.ellipse(d0.x, d0.y + 14, 20, 8, 0, 0, Math.PI * 2);
+    g.ellipse(d0.x, d0.y + d0.r * 0.9, d0.r * 1.5, d0.r * 0.55, 0, 0, Math.PI * 2);
     g.fill();
     for (let y = 0; y < sh; y++) {
       for (let x = 0; x < sw; x++) {
@@ -2944,7 +3995,7 @@ function initFights() {
   }
 
   function drawZombie(g, d0, t) {
-    const scale = 4;
+    const scale = d0.kind === "titanZombie" ? 13 : 4;
     const moving = fightStarted && !gameOver && Math.hypot(player.x - d0.x, player.y - d0.y) > 2;
     const frame = moving ? (((t * 8) | 0) % 2) : 0;
     const sprite = getZombieSprite(frame);
@@ -2954,7 +4005,7 @@ function initFights() {
     const dy = Math.round(d0.y - (sh * scale) / 2);
     g.fillStyle = "rgba(0,0,0,.24)";
     g.beginPath();
-    g.ellipse(d0.x, d0.y + 18, 18, 8, 0, 0, Math.PI * 2);
+    g.ellipse(d0.x, d0.y + d0.r * 0.95, d0.r * 1.15, d0.r * 0.46, 0, 0, Math.PI * 2);
     g.fill();
     for (let y = 0; y < sh; y++) {
       for (let x = 0; x < sw; x++) {
@@ -3462,7 +4513,7 @@ function initFights() {
       spawnApocalypseWave();
       if (enemyLabel) enemyLabel.textContent = `Apocalypse · Wave ${apocWave}`;
     } else if (mode === "armytechno") {
-      if (!ENABLE_BOSS_UPDATE_TRIGGER) {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
         setStatus("Boss Update is temporarily unavailable.");
         fightStarted = false;
         return;
@@ -3484,7 +4535,55 @@ function initFights() {
       militaryObstacles = buildMilitaryTrainingObstacles(world.w, world.h);
       slideDestroyed = false;
       dogs = [makeArmyTechnoDog(world.w * 0.76, world.h * 0.45)];
-      if (enemyLabel) enemyLabel.textContent = "Boss Update";
+      if (enemyLabel) enemyLabel.textContent = "Army Techno Dog";
+    } else if (mode === "titanzombie") {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
+        setStatus("Boss Update is temporarily unavailable.");
+        fightStarted = false;
+        return;
+      }
+      fightMode = "titanzombie";
+      terrainType = "military";
+      world.w = vw * 2;
+      world.h = vh * 2;
+      const sw = 260;
+      const sh = 180;
+      world.slides = [
+        { x: 90, y: 80, w: sw, h: sh },
+        { x: world.w - 100 - sw, y: 90, w: sw, h: sh },
+        { x: 110, y: world.h - 100 - sh, w: sw, h: sh },
+        { x: world.w - 90 - sw, y: world.h - 95 - sh, w: sw, h: sh },
+      ];
+      world.slide = world.slides[0];
+      paintballObstacles = [];
+      militaryObstacles = buildMilitaryTrainingObstacles(world.w, world.h);
+      slideDestroyed = false;
+      dogs = [makeTitanZombie(world.w * 0.74, world.h * 0.42)];
+      if (enemyLabel) enemyLabel.textContent = "Titan Zombie";
+    } else if (mode === "galaxywarrior") {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
+        setStatus("Boss Update is temporarily unavailable.");
+        fightStarted = false;
+        return;
+      }
+      fightMode = "galaxywarrior";
+      terrainType = "military";
+      world.w = vw * 2;
+      world.h = vh * 2;
+      const sw = 260;
+      const sh = 180;
+      world.slides = [
+        { x: 90, y: 80, w: sw, h: sh },
+        { x: world.w - 100 - sw, y: 90, w: sw, h: sh },
+        { x: 110, y: world.h - 100 - sh, w: sw, h: sh },
+        { x: world.w - 90 - sw, y: world.h - 95 - sh, w: sw, h: sh },
+      ];
+      world.slide = world.slides[0];
+      paintballObstacles = [];
+      militaryObstacles = buildMilitaryTrainingObstacles(world.w, world.h);
+      slideDestroyed = false;
+      dogs = [makeGalaxyWarrior(world.w * 0.76, world.h * 0.45)];
+      if (enemyLabel) enemyLabel.textContent = "Galaxy Warrior";
     } else if (mode === "skeleton") {
       fightMode = "skeleton";
       terrainType = "paintball";
@@ -3540,7 +4639,11 @@ function initFights() {
       mode === "apocalypse"
         ? `Apocalypse · Wave ${apocWave} · clear waves for $ + magicoin`
         : mode === "armytechno"
-          ? "Boss fight started: Boss Update (Military Training Base)"
+          ? "Boss fight started: Army Techno Dog (Military Training Base)"
+        : mode === "titanzombie"
+          ? "Boss fight started: Titan Zombie (Military Training Base)"
+        : mode === "galaxywarrior"
+          ? "Boss fight started: Galaxy Warrior (Military Training Base)"
         : mode === "skeleton"
           ? "Fight started: Skeleton (Paintball Arena)"
           : mode === "zombie"
@@ -3649,7 +4752,7 @@ function initShop() {
       const n = Number(game.inventory?.counts?.phantom_sniper ?? 0);
       phantomSniperNote.textContent = n > 0 ? `You own: ${n}× (equip in Weapons)` : "";
     }
-    if (limitedSection) limitedSection.style.display = LIMITED_RELEASE_CRATE_ENABLED ? "" : "none";
+    if (limitedSection) limitedSection.style.display = isLimitedReleaseCrateEnabled() ? "" : "none";
   };
 
   if (buyBowSpecial) {
@@ -4124,7 +5227,7 @@ function initShop() {
 
   if (openLimitedCrate) {
     openLimitedCrate.addEventListener("click", () => {
-      if (!LIMITED_RELEASE_CRATE_ENABLED) return;
+      if (!isLimitedReleaseCrateEnabled()) return;
       showRedeemModal();
     });
   }
@@ -4233,6 +5336,17 @@ window.addEventListener("DOMContentLoaded", () => {
   initFights();
   const apocalypseBtn = $("#startApocalypseBtn");
   const armyTechnoBtn = $("#startArmyTechnoBtn");
+  const titanZombieBtn = $("#startTitanZombieBtn");
+  const galaxyWarriorBtn = $("#startGalaxyWarriorBtn");
+  const powerToolItem = $("#powerToolItem");
+  const openPowerToolCrate = $("#openPowerToolCrate");
+  const powerToolCrateResult = $("#powerToolCrateResult");
+  const togglePowerToolMod = $("#togglePowerToolMod");
+  const openTriggersBtn = $("#openTriggersBtn");
+  const triggersWrap = $("#triggersWrap");
+  const triggersList = $("#triggersList");
+  const triggersLockedNote = $("#triggersLockedNote");
+  const modsStatusNote = $("#modsStatusNote");
   if (apocalypseBtn && window.gameStartFight) {
     apocalypseBtn.addEventListener("click", () => {
       const fightTab = document.querySelector('.tab[data-panel="fights"]');
@@ -4242,9 +5356,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (armyTechnoBtn && window.gameStartFight) {
     const bossCard = armyTechnoBtn.closest(".shopCard");
-    if (!ENABLE_BOSS_UPDATE_TRIGGER && bossCard) bossCard.style.display = "none";
+    if (!isTriggerOn("BOSS_UPDATE_TRIGGER") && bossCard) bossCard.style.display = "none";
     armyTechnoBtn.addEventListener("click", () => {
-      if (!ENABLE_BOSS_UPDATE_TRIGGER) {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
         setStatus("Boss Update is temporarily unavailable.");
         return;
       }
@@ -4253,9 +5367,118 @@ window.addEventListener("DOMContentLoaded", () => {
       window.gameStartFight("armytechno");
     });
   }
+  if (titanZombieBtn && window.gameStartFight) {
+    titanZombieBtn.addEventListener("click", () => {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
+        setStatus("Boss Update is temporarily unavailable.");
+        return;
+      }
+      const fightTab = document.querySelector('.tab[data-panel="fights"]');
+      if (fightTab) fightTab.click();
+      window.gameStartFight("titanzombie");
+    });
+  }
+  if (galaxyWarriorBtn && window.gameStartFight) {
+    galaxyWarriorBtn.addEventListener("click", () => {
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
+        setStatus("Boss Update is temporarily unavailable.");
+        return;
+      }
+      const fightTab = document.querySelector('.tab[data-panel="fights"]');
+      if (fightTab) fightTab.click();
+      window.gameStartFight("galaxywarrior");
+    });
+  }
   initShop();
   initForeverTasks();
   updateWeaponsSlots();
   initProgressBugCompensation();
+
+  // Mods + Triggers UI
+  let triggersUnlocked = false;
+  let mods = loadMods();
+
+  const renderTriggersUi = () => {
+    if (!triggersUnlocked) return;
+    if (!triggersList || typeof window.allTriggers !== "function" || typeof window.setTrigger !== "function") return;
+    const rows = window.allTriggers();
+    triggersList.innerHTML = "";
+    for (const row of rows) {
+      const wrap = document.createElement("label");
+      wrap.style.display = "flex";
+      wrap.style.gap = "10px";
+      wrap.style.alignItems = "center";
+      wrap.style.margin = "6px 0";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!row.enabled;
+      cb.addEventListener("change", () => window.setTrigger(row.id, cb.checked));
+      const txt = document.createElement("span");
+      txt.textContent = row.id;
+      wrap.appendChild(cb);
+      wrap.appendChild(txt);
+      triggersList.appendChild(wrap);
+    }
+  };
+
+  const applyModsVisibility = () => {
+    const modsOn = isTriggerOn("MOD_TRIGGER");
+    const powerToolOn = modsOn && !!mods.powerToolMod;
+    if (togglePowerToolMod) {
+      togglePowerToolMod.checked = !!mods.powerToolMod;
+      togglePowerToolMod.disabled = !modsOn;
+    }
+    if (powerToolItem) powerToolItem.style.display = powerToolOn ? "" : "none";
+    if (triggersWrap) triggersWrap.style.display = triggersUnlocked ? "" : "none";
+    if (triggersLockedNote) {
+      triggersLockedNote.textContent = triggersUnlocked ? "Unlocked." : "Enter password to unlock triggers.";
+    }
+    if (modsStatusNote) {
+      modsStatusNote.textContent = modsOn
+        ? `MOD_TRIGGER is ON. Power Tool Mod is ${powerToolOn ? "ON" : "OFF"}.`
+        : "MOD_TRIGGER is OFF. Mods are disabled.";
+    }
+  };
+
+  applyModsVisibility();
+  window.addEventListener("triggers:changed", () => {
+    renderTriggersUi();
+    applyModsVisibility();
+  });
+
+  if (openTriggersBtn) {
+    openTriggersBtn.addEventListener("click", () => {
+      const pwd = window.prompt("Password?");
+      if (pwd !== "VavaSteve") {
+        setStatus("Wrong password");
+        return;
+      }
+      triggersUnlocked = true;
+      renderTriggersUi();
+      applyModsVisibility();
+      setStatus("Triggers unlocked");
+    });
+  }
+
+  if (openPowerToolCrate) {
+    openPowerToolCrate.addEventListener("click", () => {
+      if (!isTriggerOn("MOD_TRIGGER") || !mods.powerToolMod) {
+        setStatus("Power Tool mod is disabled.");
+        return;
+      }
+      if (powerToolCrateResult) powerToolCrateResult.textContent = "Got: nothing (not implemented yet)";
+      setStatus("Power Tool Crate opened (nothing yet)");
+    });
+  }
+
+  if (togglePowerToolMod) {
+    togglePowerToolMod.addEventListener("change", () => {
+      mods.powerToolMod = !!togglePowerToolMod.checked;
+      saveMods(mods);
+      applyModsVisibility();
+      setStatus(`Power Tool Mod: ${mods.powerToolMod ? "ON" : "OFF"}`);
+    });
+  }
+
   setStatus("Ready");
 });
