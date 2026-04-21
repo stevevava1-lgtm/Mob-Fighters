@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Boss Fighting (Beta)</title>
+    <title>Boss Fighting - Bosses</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -18,6 +18,7 @@
           <button class="tab" data-panel="weapons" type="button">Weapons</button>
           <button class="tab" data-panel="shop" type="button">Shop</button>
           <button class="tab" data-panel="forever" type="button">Forever Tasks</button>
+          <button class="tab" data-panel="settings" type="button">Settings</button>
           <button class="tab" data-panel="gamemodes" type="button">Gamemodes</button>
           <button class="tab" data-panel="mods" type="button">Mods</button>
         </nav>
@@ -88,6 +89,13 @@
               </div>
 
               <canvas id="fightCanvas" class="fightCanvas" width="960" height="540" aria-label="Fight arena canvas"></canvas>
+              <div class="mobileFightUi" id="mobileFightUi" aria-hidden="true">
+                <div class="mobileAttackZone" id="mobileAttackZone" aria-label="Touch to attack"></div>
+                <div class="mobileStick" id="mobileStick" aria-label="Movement joystick">
+                  <div class="mobileStick__base"></div>
+                  <div class="mobileStick__knob" id="mobileStickKnob"></div>
+                </div>
+              </div>
               <div class="arenaFooter">
                 <div class="arenaFooter__left" id="arenaTerrainLabel">Terrain: —</div>
                 <div class="arenaFooter__right">Not released: weapons</div>
@@ -151,11 +159,18 @@
             <div class="shopCard" style="max-width: 720px">
               <div class="shopCard__title">Triggers</div>
               <p class="shopNote">Locked. Click to unlock (password required).</p>
-              <button class="buyBtn" id="openTriggersBtn" type="button">Open Triggers</button>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap">
+                <button class="buyBtn" id="openTriggersBtn" type="button">Open Triggers</button>
+                <button class="softBtn" id="lockTriggersBtn" type="button" style="display: none">Lock Triggers</button>
+              </div>
               <div id="triggersLockedNote" class="shopNote" style="margin-top: 10px"></div>
               <div id="triggersWrap" style="display: none; margin-top: 10px">
                 <div class="shopNote">Toggle triggers here (saved in your browser).</div>
                 <div id="triggersList" class="shopNote"></div>
+                <div style="margin-top: 10px">
+                  <button class="softBtn" id="recoverLastProgressBtn" type="button">Recover Last Deleted Progress</button>
+                  <div class="shopNote" id="recoverLastProgressNote" style="margin-top: 6px"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -208,6 +223,27 @@
                   <select class="slotSelect" id="slotWeapon2Select" aria-label="Equip weapon 2"></select>
                 </div>
               </div>
+              <div style="margin-top: 12px">
+                <button class="softBtn" id="openCraftingBtn" type="button">Crafting</button>
+                <div id="craftingWrap" style="display: none; margin-top: 10px">
+                  <div class="shopNote">Apply upgraders (irreversible, consumed on use).</div>
+                  <div class="slotGrid" style="margin-top: 10px">
+                    <div class="slot slot--wide">
+                      <div class="slot__name">Armor Speeder</div>
+                      <div class="slot__value" id="armorSpeederStatus">Owned: 0</div>
+                      <select class="slotSelect" id="craftArmorTargetSelect" aria-label="Armor target slot"></select>
+                      <button class="softBtn" id="applyArmorSpeederBtn" type="button" style="margin-top: 8px">Apply Armor Speeder</button>
+                    </div>
+                    <div class="slot slot--wide">
+                      <div class="slot__name">Weapon Buffer</div>
+                      <div class="slot__value" id="weaponBufferStatus">Owned: 0</div>
+                      <select class="slotSelect" id="craftWeaponTargetSelect" aria-label="Weapon target slot"></select>
+                      <button class="softBtn" id="applyWeaponBufferBtn" type="button" style="margin-top: 8px">Apply Weapon Buffer</button>
+                    </div>
+                  </div>
+                  <div class="shopNote" id="craftingNote" style="margin-top: 8px"></div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -219,12 +255,13 @@
           </div>
 
           <div class="shopLayout">
-            <div class="shopCard">
+            <div class="shopCard shopCard--balance">
               <div class="shopCard__title">Balance</div>
-              <div class="moneyRow">
-                <div class="moneyPill" id="moneyText">$0</div>
-                <div class="moneyPill" id="magicoinText">0 magicoin</div>
-                <button class="softBtn" id="resetSaveBtn" type="button" title="Reset save">Reset Save</button>
+              <div class="balanceGrid">
+                <div class="moneyPill moneyPill--panel" id="moneyText">$0</div>
+                <div class="moneyPill moneyPill--panel" id="magicoinText">0 magicoin</div>
+                <button class="softBtn softBtn--panel" id="resetCurrencyBtn" type="button" title="Reset money and magicoin only">Reset Money and Magicoin Only</button>
+                <button class="softBtn softBtn--panel" id="resetSaveBtn" type="button" title="Reset save">Reset Save(ALL)</button>
               </div>
               <div class="shopNote">Each mob gives a different amount of money. Magicoin is earned in Apocalypse (wave 5+).</div>
             </div>
@@ -252,6 +289,18 @@
                 </div>
                 <button class="buyBtn" id="buyPhantomSniper" type="button">Buy</button>
                 <div class="shopItem__owned" id="phantomSniperNote"></div>
+              </div>
+
+              <div class="shopItem" id="shadowBladeItem" style="display: none">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Shadow Blade (Event)</div>
+                  <div class="shopItem__price">10,000$</div>
+                </div>
+                <div class="shopItem__desc">
+                  18 hit damage. Applies stacking chip damage marks (purple triangle/circle/star).
+                </div>
+                <button class="buyBtn" id="buyShadowBlade" type="button">Buy</button>
+                <div class="shopItem__owned" id="shadowBladeNote"></div>
               </div>
 
               <div class="shopItem">
@@ -288,6 +337,18 @@
                 </div>
                 <button class="buyBtn" id="openPowerToolCrate" type="button">Open</button>
                 <div class="shopItem__owned" id="powerToolCrateResult"></div>
+              </div>
+
+              <div class="shopItem" id="accessoryBundleItem" style="display: none">
+                <div class="shopItem__top">
+                  <div class="shopItem__name">Accessory Bundle</div>
+                  <div class="shopItem__price">700$</div>
+                </div>
+                <div class="shopItem__desc">
+                  Event bundle: consumables, dash upgrades and crafting upgraders.
+                </div>
+                <button class="buyBtn" id="openAccessoryBundle" type="button">Buy & Open</button>
+                <div class="shopItem__owned" id="accessoryBundleResult"></div>
               </div>
             </div>
 
@@ -375,6 +436,34 @@
                 When a task is complete, press Claim to collect the reward and unlock the next task.
               </div>
               <div class="shopNote" id="foreverTaskStage"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-settings" data-panel="settings" aria-label="Settings">
+          <div class="panel__header">
+            <h2 class="panel__title">Settings</h2>
+            <p class="panel__hint">Stats and control mode.</p>
+          </div>
+          <div class="shopLayout">
+            <div class="shopCard" style="max-width: 560px">
+              <div class="shopCard__title">Stats</div>
+              <div class="settingsStats">
+                <div class="settingsStats__row">
+                  <span>Enemies killed</span>
+                  <strong id="settingsEnemiesKilled">0</strong>
+                </div>
+                <div class="settingsStats__row">
+                  <span>Total money made</span>
+                  <strong id="settingsTotalMoneyMade">$0</strong>
+                </div>
+              </div>
+              <div class="shopNote">Total money made is lifetime earned money before any spending.</div>
+            </div>
+            <div class="shopCard" style="max-width: 560px">
+              <div class="shopCard__title">Controls</div>
+              <p class="shopNote">Mobile mode adds tap-to-attack and an on-screen joystick during fights.</p>
+              <button class="buyBtn" id="toggleMobileModeBtn" type="button">Mobile mode</button>
             </div>
           </div>
         </section>

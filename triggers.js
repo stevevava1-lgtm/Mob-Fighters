@@ -7,13 +7,16 @@
 (() => {
   const KEY = "bossFightingTriggers_v1";
 
+  //All The Triggers Are Here
   const DEFAULT_TRIGGERS = {
     // Boss content master switch
     BOSS_UPDATE_TRIGGER: false,
     // Mods master switch (enables mod features)
     MOD_TRIGGER: false,
-    // Limited Release Crate availability (shop + redeem)
-    LIMITED_RELEASE_CRATE_TRIGGER: false,
+    // Shadow Blade event weapon in Shop (!)
+    SHADOW_BLADE_EVENT_TRIGGER: true,
+    // Unlocks "Powers" hotkeys in fights (Z/X/C/V)
+    ".js": false,
   };
 
   const load = () => {
@@ -31,7 +34,13 @@
         return seeded;
       }
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_TRIGGERS, ...(parsed && typeof parsed === "object" ? parsed : {}) };
+      const next = { ...DEFAULT_TRIGGERS };
+      if (parsed && typeof parsed === "object") {
+        for (const k of Object.keys(DEFAULT_TRIGGERS)) {
+          if (Object.prototype.hasOwnProperty.call(parsed, k)) next[k] = !!parsed[k];
+        }
+      }
+      return next;
     } catch {
       return { ...DEFAULT_TRIGGERS };
     }
@@ -53,7 +62,7 @@
     save(state);
     window.dispatchEvent(new CustomEvent("triggers:changed", { detail: { id, enabled: !!enabled } }));
   };
-  const allTriggers = () => Object.keys(state).sort().map((k) => ({ id: k, enabled: !!state[k] }));
+  const allTriggers = () => Object.keys(DEFAULT_TRIGGERS).sort().map((k) => ({ id: k, enabled: !!state[k] }));
 
   window.getTrigger = getTrigger;
   window.setTrigger = setTrigger;

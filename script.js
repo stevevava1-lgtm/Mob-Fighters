@@ -5,6 +5,48 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const SAVE_KEY = "bossFightingSave_v1";
 const isTriggerOn = (id) => (typeof window.getTrigger === "function" ? window.getTrigger(id) : true);
 const MODS_KEY = "bossFightingMods_v1";
+const LOCAL_EVENT_TRIGGERS_KEY = "bossFightingLocalEventTriggers_v1";
+const LOCAL_EVENT_TRIGGER_DEFAULTS = Object.freeze({
+  LIMITED_RELEASE_CRATE_TRIGGER: false,
+});
+const loadLocalEventTriggers = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_EVENT_TRIGGERS_KEY);
+    if (!raw) return { ...LOCAL_EVENT_TRIGGER_DEFAULTS };
+    const parsed = JSON.parse(raw);
+    const out = { ...LOCAL_EVENT_TRIGGER_DEFAULTS };
+    if (parsed && typeof parsed === "object") {
+      for (const k of Object.keys(LOCAL_EVENT_TRIGGER_DEFAULTS)) {
+        if (Object.prototype.hasOwnProperty.call(parsed, k)) out[k] = !!parsed[k];
+      }
+    }
+    return out;
+  } catch {
+    return { ...LOCAL_EVENT_TRIGGER_DEFAULTS };
+  }
+};
+const saveLocalEventTriggers = (state) => {
+  try {
+    localStorage.setItem(LOCAL_EVENT_TRIGGERS_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+};
+const getLocalEventTrigger = (id) => {
+  const s = loadLocalEventTriggers();
+  return !!s[id];
+};
+const setLocalEventTrigger = (id, enabled) => {
+  if (!Object.prototype.hasOwnProperty.call(LOCAL_EVENT_TRIGGER_DEFAULTS, id)) return;
+  const s = loadLocalEventTriggers();
+  s[id] = !!enabled;
+  saveLocalEventTriggers(s);
+  window.dispatchEvent(new CustomEvent("triggers:changed", { detail: { id, enabled: !!enabled, local: true } }));
+};
+const allLocalEventTriggers = () => {
+  const s = loadLocalEventTriggers();
+  return Object.keys(LOCAL_EVENT_TRIGGER_DEFAULTS).sort().map((id) => ({ id, enabled: !!s[id] }));
+};
 const loadMods = () => {
   try {
     const raw = localStorage.getItem(MODS_KEY);
@@ -22,6 +64,54 @@ const saveMods = (m) => {
     // ignore
   }
 };
+const LAST_DELETED_PROGRESS_KEY = "bossFightingLastDeletedProgress_v1";
+
+const generateResetVerification = () => {
+  const U = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const L = "abcdefghijklmnopqrstuvwxyz";
+  const D = "0123456789";
+  let s = "";
+  for (let i = 0; i < 3; i++) s += U[(Math.random() * U.length) | 0];
+  for (let i = 0; i < 2; i++) s += L[(Math.random() * L.length) | 0];
+  for (let i = 0; i < 3; i++) s += D[(Math.random() * D.length) | 0];
+  return s;
+};
+
+const backupCurrentSaveForRecovery = (reason) => {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const payload = {
+      reason: reason || "manual-reset",
+      savedAt: Date.now(),
+      rawSave: raw,
+    };
+    localStorage.setItem(LAST_DELETED_PROGRESS_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const restoreLastDeletedProgress = () => {
+  try {
+    const raw = localStorage.getItem(LAST_DELETED_PROGRESS_KEY);
+    if (!raw) return { ok: false, reason: "none" };
+    const payload = JSON.parse(raw);
+    if (!payload?.rawSave) return { ok: false, reason: "bad" };
+    localStorage.setItem(SAVE_KEY, payload.rawSave);
+    return { ok: true, savedAt: payload.savedAt ?? null, reason: payload.reason ?? "unknown" };
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+};
+
+// Powers (unlocked by trigger ".js")
+let showHitboxes = false;
+let fightMoneyMult = 1;
+let goldenEnemy = false;
+let rightMouseDown = false;
+let powerCloneBeams = []; // {x,y,dir:{x,y},leftMs:number}
 
 function loadSave() {
   try {
@@ -45,14 +135,34 @@ function loadSave() {
           skeletonWins: 0,
           zombieWins: 0,
           zombieDogKills: 0,
+          totalEnemiesKilled: 0,
+          totalMoneyEarned: 0,
           totalWins: 0,
           basicCratesOpened: 0,
           releaseCratesOpened: 0,
         },
         forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
         compensation: { progressBugClaimed: false },
+        settings: { mobileMode: false },
+        crafting: { upgrades: { armorSlot: null, weaponSlot: null }, matchState: { goldenAppleUsed: false, goldenDrinkUsesLeft: 3 } },
       };
     const parsed = JSON.parse(raw);
+    const craftingFromSave = (() => {
+      const c = parsed?.crafting;
+      if (!c || typeof c !== "object") return { upgrades: { armorSlot: null, weaponSlot: null }, matchState: { goldenAppleUsed: false, goldenDrinkUsesLeft: 3 } };
+      const u = c.upgrades && typeof c.upgrades === "object" ? c.upgrades : {};
+      const m = c.matchState && typeof c.matchState === "object" ? c.matchState : {};
+      return {
+        upgrades: {
+          armorSlot: typeof u.armorSlot === "string" ? u.armorSlot : null,
+          weaponSlot: typeof u.weaponSlot === "string" ? u.weaponSlot : null,
+        },
+        matchState: {
+          goldenAppleUsed: !!m.goldenAppleUsed,
+          goldenDrinkUsesLeft: typeof m.goldenDrinkUsesLeft === "number" ? m.goldenDrinkUsesLeft : 3,
+        },
+      };
+    })();
     return {
       money: typeof parsed.money === "number" ? parsed.money : 0,
       magicoin: typeof parsed.magicoin === "number" ? parsed.magicoin : 0,
@@ -94,6 +204,8 @@ function loadSave() {
         skeletonWins: Number(parsed?.stats?.skeletonWins || 0),
         zombieWins: Number(parsed?.stats?.zombieWins || 0),
         zombieDogKills: Number(parsed?.stats?.zombieDogKills || 0),
+        totalEnemiesKilled: Number(parsed?.stats?.totalEnemiesKilled || 0),
+        totalMoneyEarned: Number(parsed?.stats?.totalMoneyEarned || 0),
         totalWins: Number(parsed?.stats?.totalWins || 0),
         basicCratesOpened: Number(parsed?.stats?.basicCratesOpened || 0),
         releaseCratesOpened: Number(parsed?.stats?.releaseCratesOpened || 0),
@@ -108,6 +220,10 @@ function loadSave() {
       compensation: {
         progressBugClaimed: !!parsed?.compensation?.progressBugClaimed,
       },
+      settings: {
+        mobileMode: !!parsed?.settings?.mobileMode,
+      },
+      crafting: craftingFromSave,
     };
   } catch {
     return {
@@ -125,6 +241,8 @@ function loadSave() {
         skeletonWins: 0,
         zombieWins: 0,
         zombieDogKills: 0,
+        totalEnemiesKilled: 0,
+        totalMoneyEarned: 0,
         totalWins: 0,
         basicCratesOpened: 0,
         releaseCratesOpened: 0,
@@ -132,12 +250,37 @@ function loadSave() {
       },
       forever: { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false },
       compensation: { progressBugClaimed: false },
+      settings: { mobileMode: false },
+      crafting: { upgrades: { armorSlot: null, weaponSlot: null }, matchState: { goldenAppleUsed: false, goldenDrinkUsesLeft: 3 } },
     };
   }
 }
 
 function saveGame(state) {
   localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+}
+
+function addLifetimeMoneyEarned(save, amount) {
+  const n = Number(amount) || 0;
+  if (n <= 0) return;
+  if (!save.stats) save.stats = {};
+  save.stats.totalMoneyEarned = Number(save.stats.totalMoneyEarned || 0) + n;
+}
+
+/** Call after toggling save.settings.mobileMode so the fight overlay can refresh. */
+const mobileModeSubscribers = new Set();
+function subscribeMobileMode(fn) {
+  mobileModeSubscribers.add(fn);
+  return () => mobileModeSubscribers.delete(fn);
+}
+function notifyMobileModeChanged() {
+  for (const fn of mobileModeSubscribers) {
+    try {
+      fn();
+    } catch (_) {
+      /* ignore */
+    }
+  }
 }
 
 // --------- Items ----------
@@ -344,6 +487,28 @@ const ITEMS = {
     hp: 0,
     tint: "bossWeapon",
   },
+  golden_apple: {
+    id: "golden_apple",
+    name: "Golden Apple",
+    type: "weapon",
+    dmg: 0,
+    goldenApple: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  golden_drink: {
+    id: "golden_drink",
+    name: "Golden_Drink",
+    type: "weapon",
+    dmg: 0,
+    goldenDrink: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
   techno_blade: {
     id: "techno_blade",
     name: "Techno_blade",
@@ -360,6 +525,48 @@ const ITEMS = {
     type: "weapon",
     dmg: 20,
     technoBlade: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  shadow_blade: {
+    id: "shadow_blade",
+    name: "Shadow Blade",
+    type: "weapon",
+    dmg: 18,
+    shadowBlade: true,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossWeapon",
+  },
+  dash_boots: {
+    id: "dash_boots",
+    name: "Dash Boots",
+    type: "boots",
+    dmg: 0,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 4,
+    dashMult: 1.5,
+    tint: "bossArmor",
+  },
+  armor_speeder: {
+    id: "armor_speeder",
+    name: "Armor Speeder",
+    type: "material",
+    dmg: 0,
+    rangeMult: 1.0,
+    moveMult: 1.0,
+    hp: 0,
+    tint: "bossArmor",
+  },
+  weapon_buffer: {
+    id: "weapon_buffer",
+    name: "Weapon Buffer",
+    type: "material",
+    dmg: 0,
     rangeMult: 1.0,
     moveMult: 1.0,
     hp: 0,
@@ -397,7 +604,13 @@ function getItemDetailText(it) {
   if (it.laserBlaster) return "Laser Blaster: long-press → 4s beam (11 dmg/s), then 2s reload";
   if (it.chainsaw) return "Chainsaw: long-press → 4s (close) (20 dmg/s), then 2s reload";
   if (it.healthBattery) return "Health Battery: one-use, heals 20% max HP (click to use)";
+  if (it.goldenApple) return "Golden Apple: heals 20 HP, once per match (reusable next match)";
+  if (it.goldenDrink) return "Golden Drink: heals 12 HP, up to 3 uses per match (reusable next match)";
   if (it.technoBlade) return "Technoblade: +20 DMG, long-press → 1s laser beam";
+  if (it.shadowBlade) return "Shadow Blade: +18 DMG, hit applies stackable chip DOT (up to stage 3)";
+  if (it.id === "armor_speeder")
+    return "Armor Speeder: use Crafting to bind to one armor slot (+20% movement speed, +20% dash distance)";
+  if (it.id === "weapon_buffer") return "Weapon Buffer: use Crafting to bind to one weapon slot (+20% reach)";
   if (it.phantomSniper) return "Sniper: long-press on foe → 70 dmg round; slide hits = AoE all";
   if (it.bow) return `Bow: ${it.bowDmg} dmg/arrow (auto-aim)`;
   if (it.type === "weapon") return `+${it.dmg} DMG` + (it.rangeMult > 1 ? `, ${it.rangeMult}x range` : "");
@@ -467,6 +680,24 @@ function rollPowerToolLoot() {
   return "laser_blaster";
 }
 
+function rollAccessoryBundleLoot() {
+  const table = [
+    { id: "health_battery", w: 1 / 1 },
+    { id: "dash_boots", w: 1 / 2 },
+    { id: "golden_apple", w: 1 / 3 },
+    { id: "armor_speeder", w: 1 / 5 },
+    { id: "golden_drink", w: 1 / 10 },
+    { id: "weapon_buffer", w: 1 / 10 },
+  ].filter((d) => ITEMS[d.id]);
+  const total = table.reduce((a, row) => a + row.w, 0) || 1;
+  let r = Math.random() * total;
+  for (const row of table) {
+    r -= row.w;
+    if (r <= 0) return row.id;
+  }
+  return "health_battery";
+}
+
 function ensureItemInInventory(save, itemId) {
   if (!save.inventory) save.inventory = { counts: {} };
   if (!save.inventory.counts || typeof save.inventory.counts !== "object") save.inventory.counts = {};
@@ -520,10 +751,21 @@ function normalizeSave(save) {
   if (save.stats.zombieWins === undefined || save.stats.zombieWins === null) save.stats.zombieWins = 0;
   if (save.stats.zombieDogKills === undefined || save.stats.zombieDogKills === null) save.stats.zombieDogKills = 0;
   if (save.stats.bossCrates === undefined || save.stats.bossCrates === null) save.stats.bossCrates = 0;
+  if (save.stats.totalEnemiesKilled === undefined || save.stats.totalEnemiesKilled === null) save.stats.totalEnemiesKilled = 0;
+  if (save.stats.totalMoneyEarned === undefined || save.stats.totalMoneyEarned === null) save.stats.totalMoneyEarned = 0;
   if (!save.forever) save.forever = { stage: 0, lastRandomId: null, currentTask: null, readyToClaim: false };
   if (typeof save.forever.readyToClaim !== "boolean") save.forever.readyToClaim = false;
   if (!save.compensation) save.compensation = { progressBugClaimed: false };
   if (typeof save.compensation.progressBugClaimed !== "boolean") save.compensation.progressBugClaimed = false;
+  if (!save.settings || typeof save.settings !== "object") save.settings = {};
+  if (typeof save.settings.mobileMode !== "boolean") save.settings.mobileMode = false;
+  if (!save.crafting || typeof save.crafting !== "object") save.crafting = {};
+  if (!save.crafting.upgrades || typeof save.crafting.upgrades !== "object") save.crafting.upgrades = {};
+  if (!save.crafting.matchState || typeof save.crafting.matchState !== "object") save.crafting.matchState = {};
+  if (typeof save.crafting.upgrades.armorSlot !== "string") save.crafting.upgrades.armorSlot = null;
+  if (typeof save.crafting.upgrades.weaponSlot !== "string") save.crafting.upgrades.weaponSlot = null;
+  if (typeof save.crafting.matchState.goldenAppleUsed !== "boolean") save.crafting.matchState.goldenAppleUsed = false;
+  if (typeof save.crafting.matchState.goldenDrinkUsesLeft !== "number") save.crafting.matchState.goldenDrinkUsesLeft = 3;
 
   // Ensure releasite pieces exist as owned when set is purchased.
   // Represent them as "1 total", so if equipped -> count 0, else count 1.
@@ -717,6 +959,7 @@ function claimForeverTask() {
   const curTask = s.forever.currentTask;
   if ((curTask.rewardKind || "money") === "money") {
     s.money = (s.money || 0) + Number(curTask.reward || 0);
+    addLifetimeMoneyEarned(s, Number(curTask.reward || 0));
   }
   if (s.forever.stage < FIRST_TASKS.length) {
     s.forever.stage += 1;
@@ -735,10 +978,11 @@ function claimForeverTask() {
   saveGame(s);
   updateShopUi?.();
   runForeverTaskEngine();
+  refreshSettingsStats?.();
 }
 
 // --------- Redeem / Limited Release Crate ----------
-const isLimitedReleaseCrateEnabled = () => isTriggerOn("LIMITED_RELEASE_CRATE_TRIGGER");
+const isLimitedReleaseCrateEnabled = () => getLocalEventTrigger("LIMITED_RELEASE_CRATE_TRIGGER");
 
 const LIMITED_RELEASE_CODES = Object.freeze(["Hb03", "Lhyu", "Relese!", "z00ms4hur", "uracat", "april9th", "tester-001"]);
 
@@ -821,6 +1065,16 @@ function setStatus(text) {
   if (pill) pill.textContent = text;
 }
 
+function getItemDisplayName(save, itemId, slotKey) {
+  if (!itemId || !ITEMS[itemId]) return "You don't own any";
+  const base = ITEMS[itemId].name;
+  const armorSlot = save?.crafting?.upgrades?.armorSlot ?? null;
+  const weaponSlot = save?.crafting?.upgrades?.weaponSlot ?? null;
+  if (slotKey && slotKey === armorSlot) return `[Armor Speeder] ${base}`;
+  if (slotKey && slotKey === weaponSlot) return `[Weapon Buffer] ${base}`;
+  return base;
+}
+
 function initTabs() {
   const tabs = $$(".tab");
   const panels = $$(".panel");
@@ -832,6 +1086,7 @@ function initTabs() {
     if (panelName === "weapons") updateWeaponsSlots();
     if (panelName === "shop") updateShopUi?.();
     if (panelName === "forever") updateForeverUi?.();
+    if (panelName === "settings") refreshSettingsStats?.();
   };
 
   for (const t of tabs) {
@@ -839,6 +1094,32 @@ function initTabs() {
   }
 
   activate("fights");
+}
+
+function refreshSettingsStats() {
+  const s = normalizeSave(loadSave());
+  const enemiesEl = $("#settingsEnemiesKilled");
+  const moneyEl = $("#settingsTotalMoneyMade");
+  if (enemiesEl) enemiesEl.textContent = String(Number(s.stats?.totalEnemiesKilled || 0));
+  if (moneyEl) moneyEl.textContent = `$${Number(s.stats?.totalMoneyEarned || 0)}`;
+}
+
+function initSettingsPanel() {
+  const toggleBtn = $("#toggleMobileModeBtn");
+  if (!toggleBtn) return;
+  const sync = () => {
+    const s = normalizeSave(loadSave());
+    toggleBtn.textContent = s.settings?.mobileMode ? "Computer mode" : "Mobile mode";
+    refreshSettingsStats();
+  };
+  toggleBtn.addEventListener("click", () => {
+    const s = normalizeSave(loadSave());
+    s.settings.mobileMode = !s.settings.mobileMode;
+    saveGame(s);
+    notifyMobileModeChanged();
+    sync();
+  });
+  sync();
 }
 
 function updateWeaponsSlots() {
@@ -859,14 +1140,12 @@ function updateWeaponsSlots() {
     if (el) el.textContent = text;
   };
 
-  const nameOrNone = (itemId) => (itemId && ITEMS[itemId] ? ITEMS[itemId].name : "You don't own any");
-
-  set("slotHelmetValue", nameOrNone(save.equipped.helmet));
-  set("slotChestValue", nameOrNone(save.equipped.chest));
-  set("slotLegsValue", nameOrNone(save.equipped.legs));
-  set("slotBootsValue", nameOrNone(save.equipped.boots));
-  set("slotWeapon1Value", nameOrNone(save.equipped.weapon1));
-  set("slotWeapon2Value", nameOrNone(save.equipped.weapon2));
+  set("slotHelmetValue", getItemDisplayName(save, save.equipped.helmet, "helmet"));
+  set("slotChestValue", getItemDisplayName(save, save.equipped.chest, "chest"));
+  set("slotLegsValue", getItemDisplayName(save, save.equipped.legs, "legs"));
+  set("slotBootsValue", getItemDisplayName(save, save.equipped.boots, "boots"));
+  set("slotWeapon1Value", getItemDisplayName(save, save.equipped.weapon1, "weapon1"));
+  set("slotWeapon2Value", getItemDisplayName(save, save.equipped.weapon2, "weapon2"));
 
   const fillSelect = (selectId, slotKey, allowedTypes) => {
     const sel = document.getElementById(selectId);
@@ -880,7 +1159,8 @@ function updateWeaponsSlots() {
         .map((id) => {
           const c = (counts[id] || 0) + (cur === id ? 1 : 0);
           const suffix = c > 1 ? ` x${c}` : c === 1 ? "" : " (equipped)";
-          return { id, label: `${ITEMS[id].name}${suffix}` };
+          const nm = id === cur ? getItemDisplayName(save, id, slotKey) : ITEMS[id].name;
+          return { id, label: `${nm}${suffix}` };
         }),
     ];
     sel.innerHTML = "";
@@ -904,6 +1184,112 @@ function updateWeaponsSlots() {
   fillSelect("slotBootsSelect", "boots", ["boots"]);
   fillSelect("slotWeapon1Select", "weapon1", ["weapon"]);
   fillSelect("slotWeapon2Select", "weapon2", ["weapon"]);
+  window.dispatchEvent(new CustomEvent("weapons:updated"));
+}
+
+function initCraftingUi() {
+  const openBtn = $("#openCraftingBtn");
+  const wrap = $("#craftingWrap");
+  const armorSel = $("#craftArmorTargetSelect");
+  const weaponSel = $("#craftWeaponTargetSelect");
+  const applyArmorBtn = $("#applyArmorSpeederBtn");
+  const applyWeaponBtn = $("#applyWeaponBufferBtn");
+  const armorStatus = $("#armorSpeederStatus");
+  const weaponStatus = $("#weaponBufferStatus");
+  const note = $("#craftingNote");
+  if (!openBtn || !wrap || !armorSel || !weaponSel || !applyArmorBtn || !applyWeaponBtn) return;
+
+  let open = false;
+  const render = () => {
+    const s = normalizeSave(loadSave());
+    const enabled = isTriggerOn("BOSS_UPDATE_TRIGGER");
+    const eq = s.equipped ?? { helmet: null, chest: null, legs: null, boots: null, weapon1: null, weapon2: null };
+    openBtn.style.display = enabled ? "" : "none";
+    wrap.style.display = enabled && open ? "" : "none";
+    if (!enabled) return;
+    if (armorStatus) armorStatus.textContent = `Owned: ${Number(s.inventory?.counts?.armor_speeder || 0)}`;
+    if (weaponStatus) weaponStatus.textContent = `Owned: ${Number(s.inventory?.counts?.weapon_buffer || 0)}`;
+    if (note) {
+      const a = s.crafting?.upgrades?.armorSlot ?? "none";
+      const w = s.crafting?.upgrades?.weaponSlot ?? "none";
+      note.textContent = `Current: armor speeder on ${a}, weapon buffer on ${w}.`;
+    }
+    armorSel.innerHTML = "";
+    for (const slot of ["helmet", "chest", "legs", "boots"]) {
+      const id = eq[slot];
+      if (!id || !ITEMS[id]) continue;
+      const opt = document.createElement("option");
+      opt.value = slot;
+      opt.textContent = `${slot}: ${ITEMS[id].name}`;
+      armorSel.appendChild(opt);
+    }
+    weaponSel.innerHTML = "";
+    for (const slot of ["weapon1", "weapon2"]) {
+      const id = eq[slot];
+      if (!id || !ITEMS[id]) continue;
+      const opt = document.createElement("option");
+      opt.value = slot;
+      opt.textContent = `${slot}: ${ITEMS[id].name}`;
+      weaponSel.appendChild(opt);
+    }
+    applyArmorBtn.disabled = armorSel.options.length === 0;
+    applyWeaponBtn.disabled = weaponSel.options.length === 0;
+  };
+
+  openBtn.addEventListener("click", () => {
+    open = !open;
+    render();
+  });
+
+  applyArmorBtn.addEventListener("click", () => {
+    const s = normalizeSave(loadSave());
+    if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) return;
+    const target = armorSel.value;
+    if (!target) return setStatus("Equip an armor first.");
+    if ((s.inventory?.counts?.armor_speeder || 0) <= 0) return setStatus("No Armor Speeder owned.");
+    if (s.crafting?.upgrades?.armorSlot === target) {
+      setStatus("That armor already has Armor Speeder.");
+      return;
+    }
+    const ok = window.confirm(
+      "This is irreversible. Your Armor Speeder will be consumed and cannot be recovered. Continue?",
+    );
+    if (!ok) return;
+    s.inventory.counts.armor_speeder = Math.max(0, (s.inventory.counts.armor_speeder || 0) - 1);
+    s.crafting.upgrades.armorSlot = target;
+    saveGame(s);
+    updateWeaponsSlots();
+    updateShopUi?.();
+    render();
+    setStatus(`Armor Speeder applied to ${target}.`);
+  });
+
+  applyWeaponBtn.addEventListener("click", () => {
+    const s = normalizeSave(loadSave());
+    if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) return;
+    const target = weaponSel.value;
+    if (!target) return setStatus("Equip a weapon first.");
+    if ((s.inventory?.counts?.weapon_buffer || 0) <= 0) return setStatus("No Weapon Buffer owned.");
+    if (s.crafting?.upgrades?.weaponSlot === target) {
+      setStatus("That weapon already has Weapon Buffer.");
+      return;
+    }
+    const ok = window.confirm(
+      "This is irreversible. Your Weapon Buffer will be consumed and cannot be recovered. Continue?",
+    );
+    if (!ok) return;
+    s.inventory.counts.weapon_buffer = Math.max(0, (s.inventory.counts.weapon_buffer || 0) - 1);
+    s.crafting.upgrades.weaponSlot = target;
+    saveGame(s);
+    updateWeaponsSlots();
+    updateShopUi?.();
+    render();
+    setStatus(`Weapon Buffer applied to ${target}.`);
+  });
+
+  window.addEventListener("triggers:changed", render);
+  window.addEventListener("weapons:updated", render);
+  render();
 }
 
 let updateShopUi = null;
@@ -1135,6 +1521,10 @@ function initFights() {
   const mobBtnZombie = $("#mob-zombie");
   const moneyText = $("#moneyText");
   const arenaTerrainLabel = $("#arenaTerrainLabel");
+  const mobileFightUi = $("#mobileFightUi");
+  const mobileAttackZone = $("#mobileAttackZone");
+  const mobileStick = $("#mobileStick");
+  const mobileStickKnob = $("#mobileStickKnob");
 
   const ui = {
     playerFill: $("#playerHpFill"),
@@ -1180,7 +1570,11 @@ function initFights() {
     usingLaserBlaster: false,
     usingChainsaw: false,
     usingHealthBattery: false,
+    usingGoldenApple: false,
+    usingGoldenDrink: false,
     usingTechnoblade: false,
+    usingShadowBlade: false,
+    shadowBladeTarget: null,
     usingGattling: false,
     usingRpg: false,
     bowDmg: 0,
@@ -1198,6 +1592,10 @@ function initFights() {
     powerLockedTarget: null,
     technoBeamLeftMs: 0,
     technoBeamDir: { x: 1, y: 0 },
+    powerBeamLeftMs: 0,
+    powerBeamDir: { x: 1, y: 0 },
+    goldenAppleUsedMatch: false,
+    goldenDrinkUsesLeft: 3,
   };
 
   const makeDog = (x, y) => ({
@@ -1398,6 +1796,30 @@ function initFights() {
   let activeWeaponSlot = "weapon1"; // weapon1 | weapon2
   let titanQuakes = [];
   let meteors = [];
+  let mobileStickPointerId = null;
+  let mobileAttackPointerId = null;
+  const mobileStickState = { x: 0, y: 0 };
+
+  const resetMobileStick = () => {
+    mobileStickState.x = 0;
+    mobileStickState.y = 0;
+    if (mobileStickKnob) mobileStickKnob.style.transform = "translate(0px, 0px)";
+  };
+  const isMobileModeActive = () => {
+    const s = normalizeSave(loadSave());
+    return !!s.settings?.mobileMode;
+  };
+  const updateMobileOverlay = () => {
+    const active = isMobileModeActive() && fightStarted && !gameOver;
+    if (mobileFightUi) mobileFightUi.classList.toggle("is-active", active);
+    if (!active) {
+      resetMobileStick();
+      mobileStickPointerId = null;
+      mobileAttackPointerId = null;
+      mouseDown = false;
+    }
+  };
+  subscribeMobileMode(updateMobileOverlay);
 
   const getSlideBoxes = () => {
     if (terrainType === "paintball") return [];
@@ -1435,8 +1857,10 @@ function initFights() {
   const addMoney = (amount) => {
     const s = normalizeSave(loadSave());
     s.money = (s.money || 0) + amount;
+    addLifetimeMoneyEarned(s, amount);
     saveGame(s);
     updateMoneyUi();
+    refreshSettingsStats?.();
   };
 
   const addMagicoin = (amount) => {
@@ -1460,15 +1884,23 @@ function initFights() {
 
   const applyLoadout = () => {
     const eq = loadEquipped();
+    const sNow = normalizeSave(loadSave());
+    const upgrades = sNow.crafting?.upgrades ?? { armorSlot: null, weaponSlot: null };
     const helmet = eq.helmet ? ITEMS[eq.helmet] : null;
     const chest = eq.chest ? ITEMS[eq.chest] : null;
     const legs = eq.legs ? ITEMS[eq.legs] : null;
     const boots = eq.boots ? ITEMS[eq.boots] : null;
     const weaponId = eq[activeWeaponSlot] ?? null;
     const weapon = weaponId ? ITEMS[weaponId] : null;
+    const armorBoostActive = !!upgrades.armorSlot && !!eq[upgrades.armorSlot];
+    const weaponBoostActive = upgrades.weaponSlot === activeWeaponSlot && !!weapon;
 
     const hpBonus = (helmet?.hp ?? 0) + (chest?.hp ?? 0) + (legs?.hp ?? 0) + (boots?.hp ?? 0);
-    const moveMult = Math.max(1.0, (chest?.moveMult ?? 1.0));
+    const moveMultBase = Math.max(1.0, helmet?.moveMult ?? 1.0, chest?.moveMult ?? 1.0, legs?.moveMult ?? 1.0, boots?.moveMult ?? 1.0);
+    const moveMult = moveMultBase * (armorBoostActive ? 1.2 : 1.0);
+    const dashBase = Math.max(1.0, helmet?.dashMult ?? 1.0, chest?.dashMult ?? 1.0, legs?.dashMult ?? 1.0, boots?.dashMult ?? 1.0);
+    const dashMult = dashBase * (armorBoostActive ? 1.2 : 1.0);
+    const rangeBoost = weaponBoostActive ? 1.2 : 1.0;
     const baseHp = fightMode === "apocalypse" ? 1000 : 100;
     const armorHpMult = fightMode === "apocalypse" ? 10 : 1;
 
@@ -1476,7 +1908,10 @@ function initFights() {
     player.usingLaserBlaster = false;
     player.usingChainsaw = false;
     player.usingHealthBattery = false;
+    player.usingGoldenApple = false;
+    player.usingGoldenDrink = false;
     player.usingTechnoblade = false;
+    player.usingShadowBlade = false;
 
     if (weapon?.healthBattery) {
       player.usingBow = false;
@@ -1487,6 +1922,38 @@ function initFights() {
       player.usingLaserBlaster = false;
       player.usingChainsaw = false;
       player.usingHealthBattery = true;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingTechnoblade = false;
+      player.bowDmg = 0;
+      player.dmg = 0;
+      player.rangeMult = 1.0;
+    } else if (weapon?.goldenApple) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = false;
+      player.usingGoldenApple = true;
+      player.usingGoldenDrink = false;
+      player.usingTechnoblade = false;
+      player.bowDmg = 0;
+      player.dmg = 0;
+      player.rangeMult = 1.0;
+    } else if (weapon?.goldenDrink) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = true;
       player.usingTechnoblade = false;
       player.bowDmg = 0;
       player.dmg = 0;
@@ -1500,6 +1967,8 @@ function initFights() {
       player.usingLaserBlaster = true;
       player.usingChainsaw = false;
       player.usingHealthBattery = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
       player.usingTechnoblade = false;
       player.bowDmg = 0;
       player.dmg = 0;
@@ -1513,6 +1982,8 @@ function initFights() {
       player.usingLaserBlaster = false;
       player.usingChainsaw = true;
       player.usingHealthBattery = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
       player.usingTechnoblade = false;
       player.bowDmg = 0;
       player.dmg = 0;
@@ -1526,9 +1997,28 @@ function initFights() {
       player.usingLaserBlaster = false;
       player.usingChainsaw = false;
       player.usingHealthBattery = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
       player.usingTechnoblade = true;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = weapon?.dmg ?? 20;
+      player.rangeMult = 1.0;
+    } else if (weapon?.shadowBlade) {
+      player.usingBow = false;
+      player.usingPhantomSniper = false;
+      player.usingLaserBlast = false;
+      player.usingGattling = false;
+      player.usingRpg = false;
+      player.usingLaserBlaster = false;
+      player.usingChainsaw = false;
+      player.usingHealthBattery = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingTechnoblade = false;
+      player.usingShadowBlade = true;
+      player.bowDmg = 0;
+      player.dmg = weapon?.dmg ?? 18;
       player.rangeMult = 1.0;
     } else if (weapon?.rpg) {
       player.usingBow = false;
@@ -1536,6 +2026,9 @@ function initFights() {
       player.usingLaserBlast = false;
       player.usingGattling = false;
       player.usingRpg = true;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = 5;
       player.rangeMult = weapon?.rangeMult ?? 1.0;
@@ -1545,6 +2038,9 @@ function initFights() {
       player.usingLaserBlast = false;
       player.usingGattling = true;
       player.usingRpg = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = 5;
       player.rangeMult = weapon?.rangeMult ?? 1.0;
@@ -1554,6 +2050,9 @@ function initFights() {
       player.usingLaserBlast = true;
       player.usingGattling = false;
       player.usingRpg = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = 5;
       player.rangeMult = weapon?.rangeMult ?? 1.0;
@@ -1563,6 +2062,9 @@ function initFights() {
       player.usingLaserBlast = false;
       player.usingGattling = false;
       player.usingRpg = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = 5;
       player.rangeMult = weapon?.rangeMult ?? 1.0;
@@ -1572,6 +2074,9 @@ function initFights() {
       player.usingLaserBlast = false;
       player.usingGattling = false;
       player.usingRpg = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = Number(weapon.bowDmg ?? 0);
       player.dmg = 5;
       player.rangeMult = weapon?.rangeMult ?? 1.0;
@@ -1581,12 +2086,16 @@ function initFights() {
       player.usingLaserBlast = false;
       player.usingGattling = false;
       player.usingRpg = false;
+      player.usingGoldenApple = false;
+      player.usingGoldenDrink = false;
+      player.usingShadowBlade = false;
       player.bowDmg = 0;
       player.dmg = 5 + (weapon?.dmg ?? 0);
       player.rangeMult = weapon?.rangeMult ?? 1.0;
     }
+    player.rangeMult *= rangeBoost;
     player.speed = 170 * moveMult;
-    player.dashMult = chest?.dashMult ?? 1.0;
+    player.dashMult = dashMult;
 
     const newMax = baseHp + hpBonus * armorHpMult;
     const delta = newMax - player.hpMax;
@@ -1606,6 +2115,12 @@ function initFights() {
         fightHintEl.textContent = `${slotLabel} · ${w.name}: red laser shot, 5 dmg. CD 3.0s`;
       } else if (w?.bow) {
         fightHintEl.textContent = `${slotLabel} · ${w.name}: ${player.bowDmg} dmg/arrow (auto-aim). Cooldown: 1.0s`;
+      } else if (w?.goldenApple) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: heal 20 HP, once per match.`;
+      } else if (w?.goldenDrink) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: heal 12 HP, up to 3 uses per match.`;
+      } else if (w?.shadowBlade) {
+        fightHintEl.textContent = `${slotLabel} · ${w.name}: +18 hit. DOT 1%/2%/3% max HP/s (S3 capped 25/s); sustained S3 heals 10% chip dmg.`;
       } else {
         fightHintEl.textContent = `${slotLabel} · Equipped weapon damage: ${player.dmg}. Cooldown: 1.0s`;
       }
@@ -1650,6 +2165,10 @@ function initFights() {
     activeWeaponSlot = "weapon1";
     titanQuakes = [];
     meteors = [];
+    powerCloneBeams = [];
+    showHitboxes = false;
+    fightMoneyMult = 1;
+    goldenEnemy = false;
     if (fightMode === "zombie" && fightStarted) {
       dogs = [makeZombie(world.w * 0.72, world.h * 0.42)];
     } else if (fightMode === "apocalypse" && fightStarted) {
@@ -1684,6 +2203,8 @@ function initFights() {
     player.hp = player.hpMax;
     player.cdLeft = 0;
     player.dashCdLeft = 0;
+    player.goldenAppleUsedMatch = false;
+    player.goldenDrinkUsesLeft = 3;
     if (fightMode === "apocalypse") {
       player.x = world.w * 0.5;
       player.y = world.h * 0.5;
@@ -1760,6 +2281,7 @@ function initFights() {
     const dPct = clamp(totalHp / totalMax, 0, 1) * 100;
     if (ui.playerFill) ui.playerFill.style.width = `${pPct}%`;
     if (ui.dogFill) ui.dogFill.style.width = `${dPct}%`;
+    if (ui.dogFill) ui.dogFill.style.background = goldenEnemy ? "linear-gradient(90deg,#d9b55a,#f1d07a)" : "";
     if (ui.playerText) ui.playerText.textContent = `${player.hp} / ${player.hpMax}`;
     if (ui.dogText) ui.dogText.textContent = `${totalHp} / ${totalMax}`;
 
@@ -1802,6 +2324,7 @@ function initFights() {
     } else {
       canvas.style.cursor = "";
     }
+    updateMobileOverlay();
   };
 
   const onKey = (e, down) => {
@@ -1827,6 +2350,80 @@ function initFights() {
       e.preventDefault();
       return;
     }
+
+    // Powers hotkeys (triggered by ".js")
+    if (down && fightStarted && !gameOver && isTriggerOn(".js")) {
+      if (k === "x") {
+        showHitboxes = !showHitboxes;
+        setStatus(showHitboxes ? "Hitboxes: ON" : "Hitboxes: OFF");
+        e.preventDefault();
+        return;
+      }
+      if (k === "v") {
+        goldenEnemy = true;
+        fightMoneyMult = 2;
+        setStatus("Golden enemy: money x2");
+        e.preventDefault();
+        return;
+      }
+      if (k === "z") {
+        const target = getNearestAliveDog();
+        if (!target) return;
+        const dx = target.x - player.x;
+        const dy = target.y - player.y;
+        const n = Math.hypot(dx, dy) || 1;
+        const ux = dx / n;
+        const uy = dy / n;
+        for (let i = 0; i < 10; i++) {
+          const spread = (Math.random() * 2 - 1) * 0.16;
+          const ca = Math.cos(spread);
+          const sa = Math.sin(spread);
+          const sx = ux * ca - uy * sa;
+          const sy = ux * sa + uy * ca;
+          meteors.push({
+            x: player.x + sx * 26,
+            y: player.y + sy * 26,
+            vx: sx * GALAXY_METEOR_SPEED,
+            vy: sy * GALAXY_METEOR_SPEED,
+            dmg: 10,
+            r: 7,
+            ttlMs: 5200,
+            ally: true,
+          });
+        }
+        setStatus("Powers: meteor volley!");
+        e.preventDefault();
+        return;
+      }
+      if (k === "c") {
+        const target = getNearestAliveDog();
+        if (!target) return;
+        const dx = target.x - player.x;
+        const dy = target.y - player.y;
+        const n = Math.hypot(dx, dy) || 1;
+        const dir = { x: dx / n, y: dy / n };
+        if (rightMouseDown) {
+          // C + RMB: become clones then shoot 5 lasers
+          powerCloneBeams = [];
+          const count = 5;
+          for (let i = 0; i < count; i++) {
+            const ang = (Math.PI * 2 * i) / count;
+            const px = clamp(player.x + Math.cos(ang) * 26, 20, world.w - 20);
+            const py = clamp(player.y + Math.sin(ang) * 26, 20, world.h - 20);
+            powerCloneBeams.push({ x: px, y: py, dir, leftMs: 1800 });
+          }
+          setStatus("Powers: clone lasers!");
+        } else {
+          // C: gigantic laser 10s, 20 dmg/s
+          player.powerBeamLeftMs = 10000;
+          player.powerBeamDir = dir;
+          setStatus("Powers: giga laser!");
+        }
+        e.preventDefault();
+        return;
+      }
+    }
+
     const map = { arrowup: "w", arrowdown: "s", arrowleft: "a", arrowright: "d" };
     const kk = map[k] ?? k;
     if (["w", "a", "s", "d"].includes(kk)) {
@@ -1889,7 +2486,7 @@ function initFights() {
   const POWER_TOOL_RELOAD_MS = 2000;
   const LASER_BLASTER_DPS = 11;
   const CHAINSAW_DPS = 20;
-  const CHAINSAW_RANGE_PAD = 20;
+  const CHAINSAW_RANGE_PAD = 55;
   const TECHNO_BLADE_BEAM_MS = 1000;
   const TECHNO_BLADE_BEAM_DPS = 18;
 
@@ -1949,6 +2546,71 @@ function initFights() {
       triggerGalaxySplit(d0);
     }
     return true;
+  };
+  const clearShadowDot = (d0) => {
+    if (!d0) return;
+    d0.shadowDotStage = 0;
+    d0.shadowDotLeftMs = 0;
+    d0.shadowComboWindowMs = 0;
+    d0.shadowStage3Sustain = false;
+  };
+  const isShadowBladeSingleTargetMode = () => fightMode === "apocalypse" || dogs.filter((d0) => d0.hp > 0).length > 1;
+  const applyShadowBladeHit = (d0) => {
+    if (!d0 || d0.hp <= 0) return;
+    const singleTargetMode = isShadowBladeSingleTargetMode();
+    const current = player.shadowBladeTarget;
+    const currentActive =
+      !!current &&
+      current.hp > 0 &&
+      (current.shadowDotStage ?? 0) > 0 &&
+      (current.shadowDotLeftMs ?? 0) > 0;
+    if (singleTargetMode && currentActive && current !== d0) {
+      clearShadowDot(current);
+      clearShadowDot(d0);
+      d0.shadowDotStage = 1;
+      d0.shadowDotLeftMs = 3000;
+      d0.shadowComboWindowMs = 1500;
+      d0.shadowStage3Sustain = false;
+      player.shadowBladeTarget = d0;
+      return;
+    }
+    if (singleTargetMode && (!currentActive || !current)) {
+      clearShadowDot(d0);
+      d0.shadowDotStage = 1;
+      d0.shadowDotLeftMs = 3000;
+      d0.shadowComboWindowMs = 1500;
+      d0.shadowStage3Sustain = false;
+      player.shadowBladeTarget = d0;
+      return;
+    }
+    const stage = Number(d0.shadowDotStage || 0);
+    const stageActive = (d0.shadowDotLeftMs || 0) > 0;
+    const comboOpen = (d0.shadowComboWindowMs || 0) > 0;
+    let nextStage = 1;
+    let nextLeftMs = 3000;
+    if (stage === 1 && stageActive) {
+      nextStage = 2;
+      nextLeftMs = 3000;
+      d0.shadowStage3Sustain = false;
+    } else if (stage === 2 && stageActive) {
+      if (comboOpen) {
+        nextStage = 3;
+        nextLeftMs = 3000;
+        d0.shadowStage3Sustain = false;
+      } else {
+        nextStage = 2;
+        nextLeftMs = 3000;
+        d0.shadowStage3Sustain = false;
+      }
+    } else if (stage >= 3 && stageActive) {
+      nextStage = 3;
+      nextLeftMs = comboOpen ? 2000 : Math.max(1200, d0.shadowDotLeftMs || 0);
+      if (comboOpen) d0.shadowStage3Sustain = true;
+    }
+    d0.shadowDotStage = nextStage;
+    d0.shadowDotLeftMs = nextLeftMs;
+    d0.shadowComboWindowMs = 1500;
+    if (singleTargetMode) player.shadowBladeTarget = d0;
   };
 
   const findFirstBlockingObstacle = (x1, y1, x2, y2, obs) => {
@@ -2015,6 +2677,21 @@ function initFights() {
       if (Math.hypot(wx - d0.x, wy - d0.y) <= d0.r + 10) return d0;
     }
     return null;
+  };
+
+  const getNearestAliveDog = () => {
+    let best = null;
+    let bestD = Infinity;
+    for (const d0 of dogs) {
+      if (d0.hp <= 0) continue;
+      if (d0.kind === "galaxyWarrior" && !d0.gwIsReal) continue;
+      const dd = Math.hypot(d0.x - player.x, d0.y - player.y);
+      if (dd < bestD) {
+        bestD = dd;
+        best = d0;
+      }
+    }
+    return best;
   };
 
   const triggerPhantomUniversalExplosion = (cx, cy, hitSlideBox = null) => {
@@ -2163,6 +2840,7 @@ function initFights() {
     }
     if (e.button === 2) {
       e.preventDefault();
+      rightMouseDown = true;
       tryDash();
     }
   });
@@ -2172,7 +2850,103 @@ function initFights() {
     phantomAimY = wy;
   });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  const updateStickFromTouch = (clientX, clientY) => {
+    if (!mobileStick) return;
+    const rect = mobileStick.getBoundingClientRect();
+    const cx = rect.left + rect.width * 0.5;
+    const cy = rect.top + rect.height * 0.5;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const maxDist = Math.max(14, rect.width * 0.35);
+    const dist = Math.hypot(dx, dy);
+    const scale = dist > maxDist ? maxDist / dist : 1;
+    const tx = dx * scale;
+    const ty = dy * scale;
+    mobileStickState.x = maxDist > 0 ? tx / maxDist : 0;
+    mobileStickState.y = maxDist > 0 ? ty / maxDist : 0;
+    if (mobileStickKnob) mobileStickKnob.style.transform = `translate(${tx}px, ${ty}px)`;
+  };
+  if (mobileStick) {
+    mobileStick.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!isMobileModeActive() || !fightStarted || gameOver) return;
+        const t = e.changedTouches[0];
+        if (!t) return;
+        mobileStickPointerId = t.identifier;
+        updateStickFromTouch(t.clientX, t.clientY);
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+    mobileStick.addEventListener(
+      "touchmove",
+      (e) => {
+        if (mobileStickPointerId == null) return;
+        for (const t of e.changedTouches) {
+          if (t.identifier !== mobileStickPointerId) continue;
+          updateStickFromTouch(t.clientX, t.clientY);
+          e.preventDefault();
+          break;
+        }
+      },
+      { passive: false }
+    );
+  }
+  if (mobileAttackZone) {
+    mobileAttackZone.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!isMobileModeActive() || !fightStarted || gameOver) return;
+        const t = e.changedTouches[0];
+        if (!t) return;
+        mobileAttackPointerId = t.identifier;
+        mouseDown = true;
+        tryPlayerAttack();
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+  }
+  window.addEventListener(
+    "touchmove",
+    (e) => {
+      if (mobileStickPointerId == null) return;
+      for (const t of e.changedTouches) {
+        if (t.identifier !== mobileStickPointerId) continue;
+        updateStickFromTouch(t.clientX, t.clientY);
+        e.preventDefault();
+        break;
+      }
+    },
+    { passive: false }
+  );
+  window.addEventListener("touchend", (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === mobileStickPointerId) {
+        mobileStickPointerId = null;
+        resetMobileStick();
+      }
+      if (t.identifier === mobileAttackPointerId) {
+        mobileAttackPointerId = null;
+        mouseDown = false;
+      }
+    }
+  });
+  window.addEventListener("touchcancel", (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === mobileStickPointerId) {
+        mobileStickPointerId = null;
+        resetMobileStick();
+      }
+      if (t.identifier === mobileAttackPointerId) {
+        mobileAttackPointerId = null;
+        mouseDown = false;
+      }
+    }
+  });
   window.addEventListener("mouseup", (e) => {
+    if (e.button === 2) rightMouseDown = false;
     if (e.button !== 0) return;
     if (
       player.usingPhantomSniper &&
@@ -2193,28 +2967,28 @@ function initFights() {
       fightStarted &&
       !gameOver &&
       laserLongPressStart != null &&
-      laserLockedTarget &&
       player.cdLeft <= 0
     ) {
       const dur = performance.now() - laserLongPressStart;
-      if (dur >= LASER_LONG_PRESS_MS && laserLockedTarget.hp > 0) {
+      const target = (laserLockedTarget && laserLockedTarget.hp > 0 ? laserLockedTarget : getNearestAliveDog());
+      if (dur >= LASER_LONG_PRESS_MS && target && target.hp > 0) {
         player.cdLeft = 3000;
-        fireLaserBlast(laserLockedTarget);
+        fireLaserBlast(target);
       }
     }
     if (
       (player.usingLaserBlaster || player.usingChainsaw || player.usingTechnoblade) &&
       fightStarted &&
       !gameOver &&
-      powerLongPressStart != null &&
-      powerLockedTarget
+      powerLongPressStart != null
     ) {
       const dur = performance.now() - powerLongPressStart;
-      if (dur >= POWER_LONG_PRESS_MS && powerLockedTarget.hp > 0) {
+      const target = (powerLockedTarget && powerLockedTarget.hp > 0 ? powerLockedTarget : getNearestAliveDog());
+      if (dur >= POWER_LONG_PRESS_MS && target && target.hp > 0) {
         if (player.usingTechnoblade) {
           player.technoBeamLeftMs = TECHNO_BLADE_BEAM_MS;
-          const dx = powerLockedTarget.x - player.x;
-          const dy = powerLockedTarget.y - player.y;
+          const dx = target.x - player.x;
+          const dy = target.y - player.y;
           const n = Math.hypot(dx, dy) || 1;
           player.technoBeamDir = { x: dx / n, y: dy / n };
           setStatus("Technoblade beam!");
@@ -2222,7 +2996,7 @@ function initFights() {
           player.powerActiveKind = player.usingLaserBlaster ? "laser_blaster" : "chainsaw";
           player.powerActiveLeftMs = POWER_TOOL_ACTIVE_MS;
           player.powerReloadLeftMs = POWER_TOOL_ACTIVE_MS + POWER_TOOL_RELOAD_MS;
-          player.powerLockedTarget = powerLockedTarget;
+          player.powerLockedTarget = target;
           setStatus(player.powerActiveKind === "laser_blaster" ? "Laser Blaster online!" : "Chainsaw rev!");
         } else {
           setStatus("Reloading...");
@@ -2243,7 +3017,52 @@ function initFights() {
     if (gameOver) return;
     if (player.usingPhantomSniper) return;
     if (player.usingLaserBlast) return; // Laser Blast is fired via long-press
+    if (player.usingLaserBlaster || player.usingChainsaw || player.usingTechnoblade) return; // fired via long-press
     if (player.cdLeft > 0) return;
+    if (player.usingHealthBattery) {
+      const heal = Math.max(1, Math.ceil(player.hpMax * 0.2));
+      player.hp = clamp(player.hp + heal, 0, player.hpMax);
+      // consume (one-use): clear equipped slot and/or decrement inventory
+      const s = normalizeSave(loadSave());
+      const eq = s.equipped ?? { helmet: null, chest: null, legs: null, boots: null, weapon1: null, weapon2: null };
+      const slot = activeWeaponSlot;
+      if (eq[slot] === "health_battery") eq[slot] = null;
+      if (s.inventory?.counts?.health_battery) {
+        s.inventory.counts.health_battery = Math.max(0, (s.inventory.counts.health_battery || 0) - 1);
+      }
+      s.equipped = eq;
+      saveGame(s);
+      updateWeaponsSlots();
+      applyLoadout();
+      setUi();
+      setStatus(`Health Battery used! +${heal} HP`);
+      player.cdLeft = 500;
+      return;
+    }
+    if (player.usingGoldenApple) {
+      if (player.goldenAppleUsedMatch) {
+        setStatus("Golden Apple already used this match.");
+        return;
+      }
+      player.hp = clamp(player.hp + 20, 0, player.hpMax);
+      player.goldenAppleUsedMatch = true;
+      setUi();
+      setStatus("Golden Apple used! +20 HP");
+      player.cdLeft = 500;
+      return;
+    }
+    if (player.usingGoldenDrink) {
+      if ((player.goldenDrinkUsesLeft ?? 0) <= 0) {
+        setStatus("Golden Drink has no uses left this match.");
+        return;
+      }
+      player.hp = clamp(player.hp + 12, 0, player.hpMax);
+      player.goldenDrinkUsesLeft = Math.max(0, (player.goldenDrinkUsesLeft ?? 0) - 1);
+      setUi();
+      setStatus(`Golden Drink used! +12 HP (${player.goldenDrinkUsesLeft} use left)`);
+      player.cdLeft = 500;
+      return;
+    }
     let best = null;
     let bestD = Infinity;
     for (const d0 of dogs) {
@@ -2294,7 +3113,10 @@ function initFights() {
     if (bestD > range) return; // melee range
     player.cdLeft = player.cdMs;
     const ok = applyMobDamage(best, player.dmg);
-    if (ok) setStatus(`Hit ${mobNameFrom(best)} for ${player.dmg}`);
+    if (ok) {
+      if (player.usingShadowBlade) applyShadowBladeHit(best);
+      setStatus(`Hit ${mobNameFrom(best)} for ${player.dmg}`);
+    }
   };
 
   const tryDash = () => {
@@ -2555,7 +3377,171 @@ function initFights() {
     player.dashCdLeft = Math.max(0, player.dashCdLeft - dt * 1000);
     player.gattlingShotCdLeft = Math.max(0, player.gattlingShotCdLeft - dt * 1000);
     player.laserFxMs = Math.max(0, player.laserFxMs - dt * 1000);
+    player.powerActiveLeftMs = Math.max(0, (player.powerActiveLeftMs ?? 0) - dt * 1000);
+    player.powerReloadLeftMs = Math.max(0, (player.powerReloadLeftMs ?? 0) - dt * 1000);
+    player.technoBeamLeftMs = Math.max(0, (player.technoBeamLeftMs ?? 0) - dt * 1000);
+    player.powerBeamLeftMs = Math.max(0, (player.powerBeamLeftMs ?? 0) - dt * 1000);
+    if (player.powerReloadLeftMs <= 0 && player.powerActiveLeftMs <= 0) {
+      player.powerActiveKind = null;
+      player.powerLockedTarget = null;
+    }
+    if (powerCloneBeams.length) {
+      powerCloneBeams = powerCloneBeams
+        .map((b) => ({ ...b, leftMs: Math.max(0, (b.leftMs ?? 0) - dt * 1000) }))
+        .filter((b) => b.leftMs > 0);
+    }
     for (const d0 of dogs) d0.cdLeft = Math.max(0, d0.cdLeft - dt * 1000);
+    for (const d0 of dogs) {
+      d0.shadowDotLeftMs = Math.max(0, (d0.shadowDotLeftMs ?? 0) - dt * 1000);
+      d0.shadowComboWindowMs = Math.max(0, (d0.shadowComboWindowMs ?? 0) - dt * 1000);
+      if ((d0.shadowDotLeftMs ?? 0) > 0 && (d0.shadowDotStage ?? 0) > 0) {
+        const stage = clamp((d0.shadowDotStage | 0), 1, 3);
+        const pct = stage === 1 ? 0.01 : stage === 2 ? 0.02 : 0.03;
+        let dps = (d0.hpMax || 0) * pct;
+        if (stage === 3) dps = Math.min(dps, 25);
+        const oldHp = d0.hp;
+        applyMobDamage(d0, dps * dt);
+        const dealt = Math.max(0, oldHp - d0.hp);
+        if (stage === 3 && d0.shadowStage3Sustain && dealt > 0) {
+          player.hp = clamp(player.hp + dealt * 0.1, 0, player.hpMax);
+        }
+      } else if ((d0.shadowDotStage ?? 0) > 0) {
+        clearShadowDot(d0);
+      }
+    }
+    if (isShadowBladeSingleTargetMode()) {
+      const activeTarget =
+        player.shadowBladeTarget &&
+        player.shadowBladeTarget.hp > 0 &&
+        (player.shadowBladeTarget.shadowDotStage ?? 0) > 0 &&
+        (player.shadowBladeTarget.shadowDotLeftMs ?? 0) > 0
+          ? player.shadowBladeTarget
+          : null;
+      if (!activeTarget) {
+        player.shadowBladeTarget = null;
+      } else {
+        for (const d0 of dogs) {
+          if (d0 === activeTarget) continue;
+          if ((d0.shadowDotStage ?? 0) > 0 || (d0.shadowDotLeftMs ?? 0) > 0) clearShadowDot(d0);
+        }
+      }
+    } else if (
+      player.shadowBladeTarget &&
+      (player.shadowBladeTarget.hp <= 0 ||
+        (player.shadowBladeTarget.shadowDotStage ?? 0) <= 0 ||
+        (player.shadowBladeTarget.shadowDotLeftMs ?? 0) <= 0)
+    ) {
+      player.shadowBladeTarget = null;
+    }
+    // Power tools continuous damage
+    if (fightStarted && !gameOver && player.hp > 0) {
+      if (player.powerActiveLeftMs > 0 && (player.powerActiveKind === "laser_blaster" || player.powerActiveKind === "chainsaw")) {
+        let target = player.powerLockedTarget && player.powerLockedTarget.hp > 0 ? player.powerLockedTarget : null;
+        if (!target) {
+          let best = null;
+          let bestD = Infinity;
+          for (const d0 of dogs) {
+            if (d0.hp <= 0) continue;
+            const dd = Math.hypot(d0.x - player.x, d0.y - player.y);
+            if (dd < bestD) {
+              bestD = dd;
+              best = d0;
+            }
+          }
+          target = best;
+        }
+        if (target && target.hp > 0) {
+          const d = Math.hypot(target.x - player.x, target.y - player.y);
+          const inRange =
+            player.powerActiveKind === "chainsaw" ? d <= player.r + target.r + CHAINSAW_RANGE_PAD : true;
+          if (inRange) {
+            const dps = player.powerActiveKind === "chainsaw" ? CHAINSAW_DPS : LASER_BLASTER_DPS;
+            if (player.powerActiveKind === "laser_blaster") {
+              // Techno-dog style beam: hit first mob along beam (blocked by slides).
+              const dx = target.x - player.x;
+              const dy = target.y - player.y;
+              const n = Math.hypot(dx, dy) || 1;
+              const ux = dx / n;
+              const uy = dy / n;
+              let x2 = player.x + ux * 4000;
+              let y2 = player.y + uy * 4000;
+              if ((terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") && !slideDestroyed) {
+                const end = clipLaserToSlides(player.x, player.y - 2, x2, y2);
+                x2 = end.x;
+                y2 = end.y;
+              }
+              let bestHit = null;
+              let bestDist = Infinity;
+              for (const d0 of dogs) {
+                if (d0.hp <= 0) continue;
+                const dist = distancePointToSegment(d0.x, d0.y, player.x, player.y, x2, y2);
+                if (dist <= d0.r + 6) {
+                  const dAlong = Math.hypot(d0.x - player.x, d0.y - player.y);
+                  if (dAlong < bestDist) {
+                    bestDist = dAlong;
+                    bestHit = d0;
+                  }
+                }
+              }
+              if (bestHit) applyMobDamage(bestHit, dps * dt);
+              player.laserFxMs = Math.max(player.laserFxMs, 60);
+              player.laserFxFrom = { x: player.x, y: player.y };
+              player.laserFxTo = { x: x2, y: y2 };
+            } else {
+              applyMobDamage(target, dps * dt);
+            }
+          }
+        }
+      }
+      if (player.technoBeamLeftMs > 0) {
+        const ux = player.technoBeamDir?.x ?? 1;
+        const uy = player.technoBeamDir?.y ?? 0;
+        let x2 = player.x + ux * 4000;
+        let y2 = player.y + uy * 4000;
+        if ((terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") && !slideDestroyed) {
+          const end = clipLaserToSlides(player.x, player.y - 2, x2, y2);
+          x2 = end.x;
+          y2 = end.y;
+        }
+        let bestHit = null;
+        let bestDist = Infinity;
+        for (const d0 of dogs) {
+          if (d0.hp <= 0) continue;
+          const dist = distancePointToSegment(d0.x, d0.y, player.x, player.y, x2, y2);
+          if (dist <= d0.r + 6) {
+            const dAlong = Math.hypot(d0.x - player.x, d0.y - player.y);
+            if (dAlong < bestDist) {
+              bestDist = dAlong;
+              bestHit = d0;
+            }
+          }
+        }
+        if (bestHit) applyMobDamage(bestHit, TECHNO_BLADE_BEAM_DPS * dt);
+        player.laserFxMs = Math.max(player.laserFxMs, 60);
+        player.laserFxFrom = { x: player.x, y: player.y };
+        player.laserFxTo = { x: x2, y: y2 };
+      }
+
+      if (player.powerBeamLeftMs > 0) {
+        const ux = player.powerBeamDir?.x ?? 1;
+        const uy = player.powerBeamDir?.y ?? 0;
+        let x2 = player.x + ux * 4000;
+        let y2 = player.y + uy * 4000;
+        if ((terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") && !slideDestroyed) {
+          const end = clipLaserToSlides(player.x, player.y - 2, x2, y2);
+          x2 = end.x;
+          y2 = end.y;
+        }
+        for (const d0 of dogs) {
+          if (d0.hp <= 0) continue;
+          const dist = distancePointToSegment(d0.x, d0.y, player.x, player.y, x2, y2);
+          if (dist <= d0.r + 10) applyMobDamage(d0, 20 * dt);
+        }
+        player.laserFxMs = Math.max(player.laserFxMs, 60);
+        player.laserFxFrom = { x: player.x, y: player.y };
+        player.laserFxTo = { x: x2, y: y2 };
+      }
+    }
     for (const d0 of dogs) {
       if (d0.kind === "galaxyWarrior") {
         d0.meteorCdLeft = Math.max(0, (d0.meteorCdLeft ?? 0) - dt * 1000);
@@ -2608,7 +3594,11 @@ function initFights() {
     if (keys.has("s")) vy += 1;
     if (keys.has("a")) vx -= 1;
     if (keys.has("d")) vx += 1;
-    playerMoving = keys.has("w") || keys.has("a") || keys.has("s") || keys.has("d");
+    if (isMobileModeActive() && fightStarted && !gameOver) {
+      vx += mobileStickState.x;
+      vy += mobileStickState.y;
+    }
+    playerMoving = Math.hypot(vx, vy) > 0.05;
     const vlen = Math.hypot(vx, vy) || 1;
     vx /= vlen;
     vy /= vlen;
@@ -3165,14 +4155,27 @@ function initFights() {
             }
           }
           if (dead) continue;
-          if (Math.hypot(x - player.x, y - player.y) <= player.r + m.r) {
-            player.hp = clamp(player.hp - m.dmg, 0, player.hpMax);
-            setStatus(`Meteor hit you for ${m.dmg}`);
-            if (player.hp <= 0) {
-              gameOver = true;
-              setStatus("You were defeated");
+          if (m.ally) {
+            let hit = false;
+            for (const d0 of dogs) {
+              if (d0.hp <= 0) continue;
+              if (Math.hypot(x - d0.x, y - d0.y) <= d0.r + m.r) {
+                applyMobDamage(d0, m.dmg);
+                hit = true;
+                break;
+              }
             }
-            continue;
+            if (hit) continue;
+          } else {
+            if (Math.hypot(x - player.x, y - player.y) <= player.r + m.r) {
+              player.hp = clamp(player.hp - m.dmg, 0, player.hpMax);
+              setStatus(`Meteor hit you for ${m.dmg}`);
+              if (player.hp <= 0) {
+                gameOver = true;
+                setStatus("You were defeated");
+              }
+              continue;
+            }
           }
           const ttl = (m.ttlMs ?? 4500) - dt * 1000;
           if (ttl <= 0) continue;
@@ -3232,14 +4235,25 @@ function initFights() {
         if (d0.hp <= 0 && !d0.rewarded) {
           d0.rewarded = true;
           const s = normalizeSave(loadSave());
+          s.stats.totalEnemiesKilled = Number(s.stats.totalEnemiesKilled || 0) + 1;
           if (d0.kind === "zombieDog") s.stats.zombieDogKills = (s.stats.zombieDogKills || 0) + 1;
           else if (d0.kind === "titanZombieDog") s.stats.zombieDogKills = (s.stats.zombieDogKills || 0) + 1;
           else if (d0.kind !== "techno" && d0.kind !== "armyTechno" && d0.kind !== "skeleton" && d0.kind !== "zombie")
             s.stats.rogueKills += 1;
           saveGame(s);
+          refreshSettingsStats?.();
         }
       }
-      const alive = dogs.some((d0) => d0.hp > 0);
+      if (fightMode === "galaxywarrior") {
+        const realGw = dogs.find((d0) => d0.kind === "galaxyWarrior" && d0.gwIsReal);
+        if (realGw && realGw.hp <= 0) {
+          dogs = dogs.filter((d0) => !(d0.kind === "galaxyWarrior" && !d0.gwIsReal));
+        }
+      }
+      const alive =
+        fightMode === "galaxywarrior"
+          ? dogs.some((d0) => d0.kind === "galaxyWarrior" && d0.gwIsReal && d0.hp > 0)
+          : dogs.some((d0) => d0.hp > 0);
       if (!alive) {
         if (fightMode === "apocalypse") {
           const cash = 300 + (apocWave - 1) * 200;
@@ -3275,7 +4289,7 @@ function initFights() {
             else if (fightMode === "skeleton") addMoney(70);
             else if (fightMode === "zombie") addMoney(100);
             else if (fightMode === "armytechno") {
-              addMoney(300);
+              addMoney(300 * fightMoneyMult);
               const r = Math.random();
               const crates = r < 0.7 ? 1 : r < 0.95 ? 2 : 3;
               const s2 = normalizeSave(loadSave());
@@ -3312,7 +4326,7 @@ function initFights() {
               setStatus(`Titan Zombie defeated! Boss Crates opened: ${crates} → ${got.join(", ")}`);
             }
             else if (fightMode === "galaxywarrior") {
-              addMoney(400);
+              addMoney(400 * fightMoneyMult);
               addMagicoin(5);
               const r = Math.random();
               const crates = r < 0.7 ? 3 : r < 0.95 ? 4 : 5;
@@ -3331,7 +4345,7 @@ function initFights() {
               revealBossCrateRewards?.(gotIds);
               setStatus(`Galaxy Warrior defeated! +$400 +5 magicoin | Boss Crates opened: ${crates} → ${got.join(", ")}`);
             }
-            else addMoney(10);
+            else addMoney(10 * fightMoneyMult);
           }
           runForeverTaskEngine();
           if (fightMode !== "armytechno" && fightMode !== "titanzombie" && fightMode !== "galaxywarrior") setStatus("Victory");
@@ -3593,6 +4607,23 @@ function initFights() {
       else if (d0.kind === "zombieDog" || d0.kind === "titanZombieDog") drawZombieDog(ctx, d0, animT);
       else if (d0.kind === "galaxyWarrior") drawGalaxyWarrior(ctx, d0, animT);
       else drawRogueDog(ctx, d0, animT);
+      drawShadowBladeMark(ctx, d0);
+
+      if (showHitboxes) {
+        ctx.strokeStyle = "rgba(255,230,120,.8)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(d0.x, d0.y, d0.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    if (showHitboxes) {
+      ctx.strokeStyle = "rgba(120,240,255,.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     for (const a of arrows) {
@@ -3626,19 +4657,79 @@ function initFights() {
     }
 
     if (player.laserFxMs > 0 && player.laserFxFrom && player.laserFxTo) {
-      const t = player.laserFxMs / 180;
+      // Draw beam exactly like Techno Dog laser (non-army color).
+      const t = clamp(player.laserFxMs / 180, 0, 1);
       ctx.strokeStyle = `rgba(255,70,70,${(0.85 * t).toFixed(3)})`;
-      ctx.lineWidth = 8;
+      ctx.lineWidth = 14;
       ctx.beginPath();
-      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y);
+      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y - 2);
       ctx.lineTo(player.laserFxTo.x, player.laserFxTo.y);
       ctx.stroke();
-      ctx.strokeStyle = `rgba(255,170,170,${(0.9 * t).toFixed(3)})`;
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(255,180,180,${(0.95 * t).toFixed(3)})`;
+      ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y);
+      ctx.moveTo(player.laserFxFrom.x, player.laserFxFrom.y - 2);
       ctx.lineTo(player.laserFxTo.x, player.laserFxTo.y);
       ctx.stroke();
+    }
+
+    if (powerCloneBeams.length) {
+      for (const b of powerCloneBeams) {
+        const ux = b.dir?.x ?? 1;
+        const uy = b.dir?.y ?? 0;
+        let x2 = b.x + ux * 4000;
+        let y2 = b.y + uy * 4000;
+        if ((terrainType === "playground" || terrainType === "apocalypse" || terrainType === "military") && !slideDestroyed) {
+          const end = clipLaserToSlides(b.x, b.y - 2, x2, y2);
+          x2 = end.x;
+          y2 = end.y;
+        }
+        // damage mobs
+        for (const d0 of dogs) {
+          if (d0.hp <= 0) continue;
+          const dist = distancePointToSegment(d0.x, d0.y, b.x, b.y, x2, y2);
+          if (dist <= d0.r + 8) applyMobDamage(d0, 20 * (1 / 60));
+        }
+        ctx.strokeStyle = "rgba(170,90,255,.9)";
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y - 2);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(218,170,255,.95)";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y - 2);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    }
+
+    // Chainsaw visual effect (visible while active)
+    if (fightStarted && player.powerActiveKind === "chainsaw" && player.powerActiveLeftMs > 0) {
+      const tt = 1 - clamp(player.powerActiveLeftMs / POWER_TOOL_ACTIVE_MS, 0, 1);
+      const spin = animT * 14;
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(spin);
+      ctx.strokeStyle = `rgba(255,160,90,${(0.75 + 0.2 * tt).toFixed(3)})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(0, 0, player.r + 20, 0, Math.PI * 1.6);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(234,240,255,.65)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, player.r + 20, 0, Math.PI * 1.6);
+      ctx.stroke();
+      // little sparks
+      ctx.fillStyle = "rgba(255,210,120,.75)";
+      for (let i = 0; i < 8; i++) {
+        const a = spin + i * 0.8;
+        const r = player.r + 24 + (i % 3) * 4;
+        ctx.fillRect(Math.cos(a) * r, Math.sin(a) * r, 3, 3);
+      }
+      ctx.restore();
     }
 
     if (phantomUniversalBlastMs > 0) {
@@ -3715,6 +4806,48 @@ function initFights() {
   }
 
   // textures (pixel sprites)
+  function drawShadowBladeMark(g, d0) {
+    const stage = d0?.shadowDotStage | 0;
+    if (!d0 || d0.hp <= 0 || stage <= 0 || (d0.shadowDotLeftMs ?? 0) <= 0) return;
+    const x = d0.x;
+    const y = d0.y - d0.r - 16;
+    g.save();
+    g.strokeStyle = "rgba(188,120,255,.95)";
+    g.fillStyle = "rgba(188,120,255,.28)";
+    g.lineWidth = 2;
+    if (stage === 1) {
+      g.beginPath();
+      g.moveTo(x, y - 7);
+      g.lineTo(x - 7, y + 6);
+      g.lineTo(x + 7, y + 6);
+      g.closePath();
+      g.fill();
+      g.stroke();
+    } else if (stage === 2) {
+      g.beginPath();
+      g.arc(x, y, 7, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+    } else {
+      const pts = 5;
+      const outR = 8;
+      const inR = 3.4;
+      g.beginPath();
+      for (let i = 0; i < pts * 2; i++) {
+        const ang = -Math.PI / 2 + (Math.PI * i) / pts;
+        const r = i % 2 === 0 ? outR : inR;
+        const px = x + Math.cos(ang) * r;
+        const py = y + Math.sin(ang) * r;
+        if (i === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.closePath();
+      g.fill();
+      g.stroke();
+    }
+    g.restore();
+  }
+
   function drawPlayer(g, p, t, moveDir) {
     const frame = playerMoving ? ((t * 12) | 0) % 4 : 0;
     const sp = getRobotSprite(frame);
@@ -4719,13 +5852,22 @@ function initShop() {
   const redeemCancel = $("#redeemCancelBtn");
   const redeemHelp = $("#redeemHelp");
   const resetSaveBtn = $("#resetSaveBtn");
+  const resetCurrencyBtn = $("#resetCurrencyBtn");
   const lootCrateResult = $("#lootCrateResult");
   const openUndeadCrate = $("#openUndeadCrate");
   const undeadCrateResult = $("#undeadCrateResult");
+  const openPowerToolCrate = $("#openPowerToolCrate");
+  const powerToolCrateResult = $("#powerToolCrateResult");
+  const accessoryBundleItem = $("#accessoryBundleItem");
+  const openAccessoryBundle = $("#openAccessoryBundle");
+  const accessoryBundleResult = $("#accessoryBundleResult");
   const buyBowSpecial = $("#buyBowSpecial");
   const bowSpecialNote = $("#bowSpecialNote");
   const buyPhantomSniper = $("#buyPhantomSniper");
   const phantomSniperNote = $("#phantomSniperNote");
+  const shadowBladeItem = $("#shadowBladeItem");
+  const buyShadowBlade = $("#buyShadowBlade");
+  const shadowBladeNote = $("#shadowBladeNote");
   const lootModal = $("#lootModal");
   const lootCanvas = $("#lootCanvas");
   const lootText = $("#lootText");
@@ -4741,9 +5883,15 @@ function initShop() {
     game = normalizeSave(loadSave());
     moneyText.textContent = `$${game.money}`;
     if (magicoinShop) magicoinShop.textContent = `${game.magicoin ?? 0} magicoin`;
+    if (openLootCrate) openLootCrate.disabled = game.money < 30;
     if (openUndeadCrate) openUndeadCrate.disabled = game.money < 500;
+    if (openPowerToolCrate) openPowerToolCrate.disabled = game.money < 700 || !isTriggerOn("MOD_TRIGGER");
+    if (accessoryBundleItem) accessoryBundleItem.style.display = isTriggerOn("BOSS_UPDATE_TRIGGER") ? "" : "none";
+    if (openAccessoryBundle) openAccessoryBundle.disabled = game.money < 700 || !isTriggerOn("BOSS_UPDATE_TRIGGER");
     if (buyBowSpecial) buyBowSpecial.disabled = game.money < 4000;
     if (buyPhantomSniper) buyPhantomSniper.disabled = game.money < 10000 || (game.magicoin ?? 0) < 10;
+    if (shadowBladeItem) shadowBladeItem.style.display = isTriggerOn("SHADOW_BLADE_EVENT_TRIGGER") ? "" : "none";
+    if (buyShadowBlade) buyShadowBlade.disabled = game.money < 10000 || !isTriggerOn("SHADOW_BLADE_EVENT_TRIGGER");
     if (bowSpecialNote) {
       const n = Number(game.inventory?.counts?.bone_bow ?? 0);
       bowSpecialNote.textContent = n > 0 ? `You own: ${n}× Bow (equip in Weapons)` : "";
@@ -4752,7 +5900,55 @@ function initShop() {
       const n = Number(game.inventory?.counts?.phantom_sniper ?? 0);
       phantomSniperNote.textContent = n > 0 ? `You own: ${n}× (equip in Weapons)` : "";
     }
+    if (shadowBladeNote) {
+      const n = Number(game.inventory?.counts?.shadow_blade ?? 0);
+      shadowBladeNote.textContent = n > 0 ? `You own: ${n}× Shadow Blade (equip in Weapons)` : "";
+    }
     if (limitedSection) limitedSection.style.display = isLimitedReleaseCrateEnabled() ? "" : "none";
+
+    const powerToolRowOn = isTriggerOn("MOD_TRIGGER") && !!loadMods().powerToolMod;
+    const shadowRowOn = isTriggerOn("SHADOW_BLADE_EVENT_TRIGGER");
+    const accessoryRowOn = isTriggerOn("BOSS_UPDATE_TRIGGER");
+    const limitedOn = isLimitedReleaseCrateEnabled();
+
+    const mainGrid = document.querySelector("#panel-shop .shopLayout > .shopGrid");
+    if (mainGrid) {
+      const offers = [];
+      offers.push({ can: game.money >= 4000 });
+      offers.push({ can: game.money >= 10000 && (game.magicoin ?? 0) >= 10 });
+      if (shadowRowOn) offers.push({ can: game.money >= 10000 });
+      offers.push({ can: game.money >= 30 });
+      offers.push({ can: game.money >= 500 });
+      if (powerToolRowOn) offers.push({ can: game.money >= 700 && isTriggerOn("MOD_TRIGGER") });
+      if (accessoryRowOn) offers.push({ can: game.money >= 700 });
+      const anyAfford = offers.some((o) => o.can);
+      mainGrid.classList.remove("shopGrid--afford-yes", "shopGrid--afford-no");
+      if (offers.length) mainGrid.classList.add(anyAfford ? "shopGrid--afford-yes" : "shopGrid--afford-no");
+    }
+
+    const limitedGrid = document.querySelector("#limitedLootSection .shopGrid");
+    if (limitedGrid) {
+      limitedGrid.classList.remove("shopGrid--afford-yes", "shopGrid--afford-no");
+      if (limitedOn) limitedGrid.classList.add("shopGrid--afford-yes");
+    }
+  };
+
+  const runVerificationResetFlow = (doReset, successMsg) => {
+    const warned = window.confirm("Warning: this action resets progress data. Continue?");
+    if (!warned) return;
+    const confirmed = window.confirm("Confirm reset?");
+    if (!confirmed) return;
+    const code = generateResetVerification();
+    const typed = window.prompt(`Type this verification to continue: ${code}`);
+    if (typed !== code) {
+      setStatus("Verification failed. Reset cancelled.");
+      return;
+    }
+    doReset?.();
+    refresh();
+    runForeverTaskEngine();
+    updateWeaponsSlots();
+    setStatus(successMsg);
   };
 
   if (buyBowSpecial) {
@@ -4790,6 +5986,27 @@ function initShop() {
       refresh();
       updateWeaponsSlots();
       setStatus("Bought: Phantom Sniper");
+      runForeverTaskEngine();
+    });
+  }
+
+  if (buyShadowBlade) {
+    buyShadowBlade.addEventListener("click", () => {
+      game = normalizeSave(loadSave());
+      if (!isTriggerOn("SHADOW_BLADE_EVENT_TRIGGER")) {
+        setStatus("Shadow Blade event is disabled.");
+        return refresh();
+      }
+      if (game.money < 10000) {
+        setStatus("Not enough money for Shadow Blade (10,000$)");
+        return refresh();
+      }
+      game.money -= 10000;
+      ensureItemInInventory(game, "shadow_blade");
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+      setStatus("Bought: Shadow Blade");
       runForeverTaskEngine();
     });
   }
@@ -5009,7 +6226,38 @@ function initShop() {
     };
 
     const o = "#0B1230";
+    if (itemId === "armor_speeder") {
+      for (let y = 4; y <= 12; y++) for (let x = 7; x <= 12; x++) px(x, y, o);
+      for (let y = 5; y <= 11; y++) for (let x = 8; x <= 11; x++) px(x, y, "#8ad3ff");
+      px(9, 7, "#25E4FF");
+      px(10, 7, "#25E4FF");
+      px(9, 9, "#d9f2ff");
+      px(10, 9, "#d9f2ff");
+      return;
+    }
+    if (itemId === "weapon_buffer") {
+      for (let y = 2; y <= 13; y++) px(10, y, o);
+      for (let y = 3; y <= 12; y++) px(10, y, "#f2c46e");
+      for (let x = 7; x <= 13; x++) px(x, 7, o);
+      for (let x = 8; x <= 12; x++) px(x, 7, "#ffd98f");
+      return;
+    }
     if (it.type === "weapon") {
+      if (itemId === "golden_apple") {
+        for (let y = 3; y <= 12; y++) for (let x = 6; x <= 13; x++) px(x, y, o);
+        for (let y = 4; y <= 11; y++) for (let x = 7; x <= 12; x++) px(x, y, "#f1d07a");
+        px(9, 2, "#7e5b2d");
+        px(10, 2, "#7e5b2d");
+        px(11, 3, "#46d48a");
+        return;
+      }
+      if (itemId === "golden_drink") {
+        for (let y = 3; y <= 13; y++) for (let x = 8; x <= 11; x++) px(x, y, o);
+        for (let y = 4; y <= 12; y++) for (let x = 9; x <= 10; x++) px(x, y, "#f1d07a");
+        for (let x = 8; x <= 11; x++) px(x, 3, "#ffd98f");
+        px(11, 2, "#b5f1ff");
+        return;
+      }
       if (it.bow) {
         const demonic = itemId === "demonic_bow";
         const st = demonic ? "#3a1520" : "#3d3a33";
@@ -5225,6 +6473,72 @@ function initShop() {
     });
   }
 
+  if (openPowerToolCrate) {
+    openPowerToolCrate.addEventListener("click", async () => {
+      game = normalizeSave(loadSave());
+      if (!isTriggerOn("MOD_TRIGGER")) {
+        setStatus("Power Tool mod is disabled.");
+        return refresh();
+      }
+      if (game.money < 700) {
+        setStatus("Not enough money for Power Tool Crate");
+        return refresh();
+      }
+      game.money -= 700;
+      const itemId = rollPowerToolLoot();
+      ensureItemInInventory(game, itemId);
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+      const it = ITEMS[itemId];
+      const detail = getItemDetailText(it);
+      if (powerToolCrateResult) powerToolCrateResult.textContent = `Got: ${it.name} (${detail})`;
+      showLootModal(`You got: ${it.name}`, (ctx, W, H) => {
+        ctx.fillStyle = "rgba(170,90,255,.10)";
+        ctx.fillRect(0, 0, W, H);
+        drawItemTexture(itemId, ctx, W, H);
+        ctx.fillStyle = "rgba(234,240,255,.90)";
+        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText(detail, 12, H - 14);
+      });
+      setStatus(`Power Tool crate: ${it.name}`);
+      runForeverTaskEngine();
+    });
+  }
+
+  if (openAccessoryBundle) {
+    openAccessoryBundle.addEventListener("click", () => {
+      game = normalizeSave(loadSave());
+      if (!isTriggerOn("BOSS_UPDATE_TRIGGER")) {
+        setStatus("Boss Update is OFF.");
+        return refresh();
+      }
+      if (game.money < 700) {
+        setStatus("Not enough money for Accessory Bundle");
+        return refresh();
+      }
+      game.money -= 700;
+      const itemId = rollAccessoryBundleLoot();
+      ensureItemInInventory(game, itemId);
+      saveGame(game);
+      refresh();
+      updateWeaponsSlots();
+      const it = ITEMS[itemId];
+      const detail = getItemDetailText(it);
+      if (accessoryBundleResult) accessoryBundleResult.textContent = `Got: ${it.name} (${detail})`;
+      showLootModal(`Accessory Bundle: ${it.name}`, (ctx, W, H) => {
+        ctx.fillStyle = "rgba(255,205,82,.12)";
+        ctx.fillRect(0, 0, W, H);
+        drawItemTexture(itemId, ctx, W, H);
+        ctx.fillStyle = "rgba(234,240,255,.90)";
+        ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ctx.fillText(detail, 12, H - 14);
+      });
+      setStatus(`Accessory Bundle: ${it.name}`);
+      runForeverTaskEngine();
+    });
+  }
+
   if (openLimitedCrate) {
     openLimitedCrate.addEventListener("click", () => {
       if (!isLimitedReleaseCrateEnabled()) return;
@@ -5233,11 +6547,30 @@ function initShop() {
   }
   if (resetSaveBtn) {
     resetSaveBtn.addEventListener("click", () => {
-      localStorage.removeItem(SAVE_KEY);
-      game = loadSave();
-      refresh();
-      runForeverTaskEngine();
-      setStatus("Save reset");
+      runVerificationResetFlow(
+        () => {
+          backupCurrentSaveForRecovery("full-save-reset");
+          localStorage.removeItem(SAVE_KEY);
+          game = loadSave();
+        },
+        "Save reset (backup stored for recovery)",
+      );
+    });
+  }
+
+  if (resetCurrencyBtn) {
+    resetCurrencyBtn.addEventListener("click", () => {
+      runVerificationResetFlow(
+        () => {
+          backupCurrentSaveForRecovery("currency-reset");
+          const s = normalizeSave(loadSave());
+          s.money = 0;
+          s.magicoin = 0;
+          saveGame(s);
+          game = loadSave();
+        },
+        "Money + magicoin reset (backup stored for recovery)",
+      );
     });
   }
 
@@ -5316,6 +6649,7 @@ function initProgressBugCompensation() {
       return;
     }
     cur.money = (cur.money || 0) + 6000;
+    addLifetimeMoneyEarned(cur, 6000);
     cur.magicoin = (cur.magicoin || 0) + 7;
     ensureItemInInventory(cur, "bone_bow");
     cur.armor = cur.armor ?? { ownedSet: false, equipped: { helmet: false, chest: false, legs: false, boots: false } };
@@ -5325,6 +6659,7 @@ function initProgressBugCompensation() {
     updateShopUi?.();
     updateWeaponsSlots();
     runForeverTaskEngine();
+    refreshSettingsStats?.();
     setStatus("Compensation claimed");
     hide();
   });
@@ -5332,6 +6667,7 @@ function initProgressBugCompensation() {
 
 window.addEventListener("DOMContentLoaded", () => {
   initTabs();
+  initSettingsPanel();
   initRobot();
   initFights();
   const apocalypseBtn = $("#startApocalypseBtn");
@@ -5343,9 +6679,12 @@ window.addEventListener("DOMContentLoaded", () => {
   const powerToolCrateResult = $("#powerToolCrateResult");
   const togglePowerToolMod = $("#togglePowerToolMod");
   const openTriggersBtn = $("#openTriggersBtn");
+  const lockTriggersBtn = $("#lockTriggersBtn");
   const triggersWrap = $("#triggersWrap");
   const triggersList = $("#triggersList");
   const triggersLockedNote = $("#triggersLockedNote");
+  const recoverLastProgressBtn = $("#recoverLastProgressBtn");
+  const recoverLastProgressNote = $("#recoverLastProgressNote");
   const modsStatusNote = $("#modsStatusNote");
   if (apocalypseBtn && window.gameStartFight) {
     apocalypseBtn.addEventListener("click", () => {
@@ -5392,6 +6731,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initShop();
   initForeverTasks();
   updateWeaponsSlots();
+  initCraftingUi();
   initProgressBugCompensation();
 
   // Mods + Triggers UI
@@ -5401,7 +6741,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const renderTriggersUi = () => {
     if (!triggersUnlocked) return;
     if (!triggersList || typeof window.allTriggers !== "function" || typeof window.setTrigger !== "function") return;
-    const rows = window.allTriggers();
+    const rows = [
+      ...window.allTriggers().map((row) => ({ ...row, local: false })),
+      ...allLocalEventTriggers().map((row) => ({ ...row, local: true })),
+    ];
     triggersList.innerHTML = "";
     for (const row of rows) {
       const wrap = document.createElement("label");
@@ -5412,7 +6755,10 @@ window.addEventListener("DOMContentLoaded", () => {
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = !!row.enabled;
-      cb.addEventListener("change", () => window.setTrigger(row.id, cb.checked));
+      cb.addEventListener("change", () => {
+        if (row.local) setLocalEventTrigger(row.id, cb.checked);
+        else window.setTrigger(row.id, cb.checked);
+      });
       const txt = document.createElement("span");
       txt.textContent = row.id;
       wrap.appendChild(cb);
@@ -5430,14 +6776,20 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     if (powerToolItem) powerToolItem.style.display = powerToolOn ? "" : "none";
     if (triggersWrap) triggersWrap.style.display = triggersUnlocked ? "" : "none";
+    if (lockTriggersBtn) lockTriggersBtn.style.display = triggersUnlocked ? "" : "none";
     if (triggersLockedNote) {
       triggersLockedNote.textContent = triggersUnlocked ? "Unlocked." : "Enter password to unlock triggers.";
+    }
+    if (recoverLastProgressNote) {
+      const hasBackup = !!localStorage.getItem(LAST_DELETED_PROGRESS_KEY);
+      recoverLastProgressNote.textContent = hasBackup ? "Backup found. You can recover latest deleted progress." : "No deleted-progress backup found yet.";
     }
     if (modsStatusNote) {
       modsStatusNote.textContent = modsOn
         ? `MOD_TRIGGER is ON. Power Tool Mod is ${powerToolOn ? "ON" : "OFF"}.`
         : "MOD_TRIGGER is OFF. Mods are disabled.";
     }
+    updateShopUi?.();
   };
 
   applyModsVisibility();
@@ -5460,15 +6812,38 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (openPowerToolCrate) {
-    openPowerToolCrate.addEventListener("click", () => {
-      if (!isTriggerOn("MOD_TRIGGER") || !mods.powerToolMod) {
-        setStatus("Power Tool mod is disabled.");
+  if (lockTriggersBtn) {
+    lockTriggersBtn.addEventListener("click", () => {
+      triggersUnlocked = false;
+      applyModsVisibility();
+      setStatus("Triggers locked");
+    });
+  }
+
+  if (recoverLastProgressBtn) {
+    recoverLastProgressBtn.addEventListener("click", () => {
+      if (!triggersUnlocked) {
+        setStatus("Unlock triggers first.");
         return;
       }
-      if (powerToolCrateResult) powerToolCrateResult.textContent = "Got: nothing (not implemented yet)";
-      setStatus("Power Tool Crate opened (nothing yet)");
+      const ok = window.confirm("Recover the latest deleted progress backup?");
+      if (!ok) return;
+      const res = restoreLastDeletedProgress();
+      if (!res.ok) {
+        setStatus("No recoverable backup found.");
+        applyModsVisibility();
+        return;
+      }
+      updateShopUi?.();
+      updateWeaponsSlots();
+      runForeverTaskEngine?.();
+      applyModsVisibility();
+      setStatus("Recovered last deleted progress.");
     });
+  }
+
+  if (openPowerToolCrate) {
+    // handled in initShop()
   }
 
   if (togglePowerToolMod) {
